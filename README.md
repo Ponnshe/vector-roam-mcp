@@ -39,8 +39,11 @@ Models learn through the Distributional Hypothesis: words that appear in similar
 
 ## 3. Vector Arithmetic and Semantic Relationships
 The spatial organization allows for Linear Relational Mapping. Because relationships are encoded as directions and distances (offsets), we can perform arithmetic on concepts:
-- *Logic:* $$\vec{v}_{bark} \approx \vec{v}_{meow} + (\vec{v}_{dog} - \vec{v}_{cat})$$
-- The displacement vector $(\vec{v}_{dog} - \vec{v}_{cat})$ represents the abstract concept of "species transition." Applying this vector to a sound (`meow`) moves the coordinate to the neighborhood of the corresponding sound for the target species (`bark`).
+- *Logic:*
+
+$$\vec{v}_{\text{bark}} \approx \vec{v}_{\text{meow}} + (\vec{v}_{\text{dog}} - \vec{v}_{\text{cat}})$$
+
+- The term ($`\vec{v}_{\text{meow}} \\- \vec{v}_{\text{cat}}`$) is the "sound-to-species" offset. Adding it to $\vec{v}_{\text{dog}}$ moves us to the corresponding sound for that species.
 
 ## 4. Perplexity and Statistical Anomalies
 In the phrase "my cat barks," a model detects an anomaly not through logic, but through Statistical Distance.
@@ -53,7 +56,9 @@ In the phrase "my cat barks," a model detects an anomaly not through logic, but 
 It is critical to distinguish between the Encoder and the Vector Database:
 - *The Encoder (LLM/Transformer):* Takes the input and generates the vector (Inference).
 - *The Vector Database (Qdrant):* Stores millions of vectors and performs the search.
-- *The Metric:* Instead of exact keyword matching, it uses Cosine Similarity to measure the angular proximity between the query vector and stored vectors:$$\text{cosine\_sim}(\mathbf{A}, \mathbf{B}) = \frac{\mathbf{A} \cdot \mathbf{B}}{\|\mathbf{A}\| \|\mathbf{B}\|}$$
+- *The Metric:* Instead of exact keyword matching, it uses Cosine Similarity to measure the angular proximity between the query vector and stored vectors:
+
+  $$\text{cosine\\_sim}(\mathbf{A}, \mathbf{B}) = \frac{\mathbf{A} \cdot \mathbf{B}}{\|\mathbf{A}\| \|\mathbf{B}\|}$$
 
 ## 6. Search Optimization (ANN)
 For massive datasets, calculating the distance against every single vector is computationally expensive ($O(n)$). Engineering solutions use Approximate Nearest Neighbors (ANN) algorithms, like HNSW (Hierarchical Navigable Small Worlds), to find the "closest" concepts in logarithmic time.
@@ -84,9 +89,7 @@ nix develop
 ## 2. Infrastructure
 Spin up the local Qdrant instance:
 ```bash
-docker run -p 6333:6333 -p 6334:6334 \
-    -v "$(pwd)/qdrant_storage:/qdrant/storage:z" \
-    qdrant/qdrant
+docker compose up -d
 ```
 
 ##  3. Running the MCP Servers

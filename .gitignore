@@ -1,0 +1,43 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*$py.class
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.uv/
+
+# Virtual environments
+.venv
+
+# --- System / IDE ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Nix ---
+.direnv/
+.envrc
+result
+result-*
+
+# --- Rust ---
+/rust_vector_engine/target/
+
+# --- Qdrant & Docker ---
+qdrant_data/
+qdrant_storage/
+.env
+
+# --- Logs & Temp ---
+*.log
+tmp/
+temp/

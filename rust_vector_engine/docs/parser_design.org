@@ -59,7 +59,6 @@ Parser ..> LocationTranslator : uses
 @enduml
 #+end_src
 
-#+RESULTS:
 [[file:./diagrams/parser_class_diagram.png]]
 
 ** Main Components
@@ -127,7 +126,6 @@ LocationTranslate --> Parser
 @enduml
 #+end_src
 
-#+RESULTS:
 [[file:diagrams/parser_structure1.png]]
 
 *** Post-Mortem Analysis

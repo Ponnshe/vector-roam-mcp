@@ -8,15 +8,15 @@
 This document defines the architecture of the Parser component for the vector-roam-mcp project. The primary goal is to transform .org files into semantic chunks while maintaining an exact reference to their physical coordinates (bytes and lines) to enable RAG operations and atomic editing by AI agents.
 
 * Technical Objectives
-- **High-Fidelity Physical Mapping**: Integrate the =orgize v0.10= Concrete Syntax Tree (CST) to obtain absolute byte offsets.
-- **Memory Efficiency**: Implement a "Zero-copy" strategy by using Range<usize> instead of duplicating content into Strings.
-- **Coordinate Resolution**: Guarantee byte-offset to line-number translation in O(log L) time.
-- **Context Preservation**: Build hierarchical "Breadcrumbs" for each section to enrich vector embeddings.
+- *High-Fidelity Physical Mapping*: Integrate the =orgize v0.10= Concrete Syntax Tree (CST) to obtain absolute byte offsets.
+- *Memory Efficiency*: Implement a "Zero-copy" strategy by using Range<usize> instead of duplicating content into Strings.
+- *Coordinate Resolution*: Guarantee byte-offset to line-number translation in O(log L) time.
+- *Context Preservation*: Build hierarchical "Breadcrumbs" for each section to enrich vector embeddings.
 
 * System Architecture
 
 ** Class Diagram
-#+begin_src plantuml :file diagrams/parser_class_diagram.png
+#+begin_src plantuml :file ./diagrams/parser_class_diagram.png
 @startuml
 class Parser {
     - org_sections: Vec<OrgSection>
@@ -60,7 +60,7 @@ Parser ..> LocationTranslator : uses
 #+end_src
 
 #+RESULTS:
-[[file:diagrams/parser_class_diagram.png]]
+[[file:./diagrams/parser_class_diagram.png]]
 
 ** Main Components
 *** LocationTranslator
@@ -70,14 +70,14 @@ Responsible for processing the file buffer in a single $O(N)$ pass to build a li
 The minimal unit of information for the Qdrant vector database. It does not own the text; it only holds the metadata and ranges required to reconstruct it from the original buffer.
 
 *** OrgKind (Enum)
-- **Preamble**: Captures the global context (title, tags, categories) before the first Headline.
-- **Headline**: Semantic union between the header and its immediate content section.
-- **SrcBlock**: Code blocks with specific language metadata for technical retrieval.
+- *Preamble*: Captures the global context (title, tags, categories) before the first Headline.
+- *Headline*: Semantic union between the header and its immediate content section.
+- *SrcBlock*: Code blocks with specific language metadata for technical retrieval.
 
 * Design Decisions (Rationale)
-1. **Standardization on usize**: ~usize~ is used for all offsets and lines to ensure compatibility with 64-bit architectures and avoid overflows in large files.
-2. **Rowan Abstraction**: Although ~orgize~ v0.10 is used, the internal Parser architecture acts as an adapter so the rest of the system does not depend directly on the CST implementation.
-3. **Immutability**: Once an ~OrgSection~ is generated, ranges are immutable, facilitating parallel processing in later synchronization stages.
+1. *Standardization on usize*: ~usize~ is used for all offsets and lines to ensure compatibility with 64-bit architectures and avoid overflows in large files.
+2. *Rowan Abstraction*: Although ~orgize~ v0.10 is used, the internal Parser architecture acts as an adapter so the rest of the system does not depend directly on the CST implementation.
+3. *Immutability*: Once an ~OrgSection~ is generated, ranges are immutable, facilitating parallel processing in later synchronization stages.
 
 -----
 
@@ -87,7 +87,7 @@ This section preserves the "failed" or suboptimal iterations of the architecture
 ** Iteration 1: The String-Heavy Data Model
 Initially, the design focused on immediate data extraction rather than structured mapping. It treated structural components as passive data containers.
 
-#+begin_src plantuml :results file :file diagrams/parser_structure1.png
+#+begin_src plantuml :results file :file ./diagrams/parser_structure1.png
 @startuml
 class Parser {
     - org_sections: Vec<OrgSection>
@@ -131,16 +131,16 @@ LocationTranslate --> Parser
 [[file:diagrams/parser_structure1.png]]
 
 *** Post-Mortem Analysis
-- **String Bloating**: Storing content as ~String~ inside the enum would cause massive memory overhead, essentially duplicating the entire file buffer in RAM for every parsed section.
-- **Data Class Syndrome**: ~OrgSection~ was a "dumb" container. It lacked the behavior necessary to resolve its own text, forcing the ~Parser~ to become a "God Object".
-- **I/O Inefficiency**: The ~new(filepath: Path)~ signature implied the parser was responsible for file I/O, violating the Principle of Single Responsibility and making the component harder to test in isolation.
+- *String Bloating*: Storing content as ~String~ inside the enum would cause massive memory overhead, essentially duplicating the entire file buffer in RAM for every parsed section.
+- *Data Class Syndrome*: ~OrgSection~ was a "dumb" container. It lacked the behavior necessary to resolve its own text, forcing the ~Parser~ to become a "God Object".
+- *I/O Inefficiency*: The ~new(filepath: Path)~ signature implied the parser was responsible for file I/O, violating the Principle of Single Responsibility and making the component harder to test in isolation.
 
 *** Lessons Learned & Evolution
 The transition from Iteration 1 to the next architecture was driven by three key engineering realizations:
 
-1. **The Range-Based Paradigm**: Instead of "taking" the data, we now "point" to it. Using ~std::ops::Range<usize>~ allows the system to remain "zero-copy" (ish), keeping the memory footprint minimal regardless of the note's size.
-2. **CST over AST**: The discovery of ~orgize~ v0.10 and the **Rowan** engine changed the project from "guessing" locations to having absolute coordinate certainty. This allowed us to ditch manual newline counting in favor of the ~LocationTranslator~'s binary search.
-3. **Semantic Hierarchy**: We realized that ~Headline~ ranges in Rowan are nested (parents physically contain children). This forced a shift from simple linear iteration to a stack-based or recursive traversal to avoid indexing redundant, overlapping data.
+1. *The Range-Based Paradigm*: Instead of "taking" the data, we now "point" to it. Using ~std::ops::Range<usize>~ allows the system to remain "zero-copy" (ish), keeping the memory footprint minimal regardless of the note's size.
+2. *CST over AST*: The discovery of ~orgize~ v0.10 and the *Rowan* engine changed the project from "guessing" locations to having absolute coordinate certainty. This allowed us to ditch manual newline counting in favor of the ~LocationTranslator~'s binary search.
+3. *Semantic Hierarchy*: We realized that ~Headline~ ranges in Rowan are nested (parents physically contain children). This forced a shift from simple linear iteration to a stack-based or recursive traversal to avoid indexing redundant, overlapping data.
 
 * License
 This design and its subsequent implementation are distributed under the terms of the **GPLv3** license.

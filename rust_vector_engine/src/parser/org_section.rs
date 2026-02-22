@@ -92,11 +92,12 @@ mod test {
     fn get_headlines(content: &str) -> Vec<Headline> {
         let org = Org::parse(content);
         let mut headlines = vec![];
-        org.traverse(&mut |event| {
+        let mut handler = from_fn(|event| {
             if let Event::Enter(Container::Headline(hdl)) = event {
                 headlines.push(hdl);
             }
         });
+        org.traverse(&mut handler);
         headlines
     }
 
@@ -123,17 +124,14 @@ mod test {
             vec![],
         );
         let result = section.validate(content);
-        assert_eq!(
+        assert!(matches!(
             result,
-            Err(SectionError::InvalidSectionRange(Range {
-                start: 0,
-                end: 85
-            }))
-        )
+            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (0..85)
+        ));
     }
 
     #[test]
-    fn validate_invalid_org_kind_range() {
+    fn validate_invalid_headline_range() {
         let content = "* Some headline 🦀 with emoji";
         let section = OrgSection::new(
             OrgKind::Headline {
@@ -146,13 +144,60 @@ mod test {
             vec![],
         );
         let result = section.validate(content);
-        assert_eq!(
+        assert!(matches!(
             result,
-            Err(SectionError::InvalidOrgKindRange(Range {
-                start: 0,
-                end: 18
-            }))
-        )
+            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (0..18)
+        ));
+    }
+
+    #[test]
+    fn validate_invalid_headline_content_ranges() {
+        let content = "* Some headline 🦀 with emoji";
+        let section = OrgSection::new(
+            OrgKind::Headline {
+                level: 1,
+                headline_range: 0..31,
+                content_ranges: vec![0..3, 20..41],
+            },
+            0..31,
+            (1, 1),
+            vec![],
+        );
+        let result = section.validate(content);
+        assert!(matches!(
+            result,
+            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (20..41)
+        ));
+    }
+
+    #[test]
+    fn validate_invalid_preamble_content_range() {
+        let content = "* Some headline 🦀 with emoji";
+        let section = OrgSection::new(OrgKind::Preamble { content: 1..18 }, 0..31, (1, 1), vec![]);
+        let result = section.validate(content);
+        assert!(matches!(
+            result,
+            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (1..18)
+        ));
+    }
+
+    #[test]
+    fn validate_invalid_srcblock_content_range() {
+        let content = "* Some headline 🦀 with emoji";
+        let section = OrgSection::new(
+            OrgKind::SrcBlock {
+                language: "rust".to_string(),
+                content_range: 0..18,
+            },
+            0..31,
+            (1, 1),
+            vec![],
+        );
+        let result = section.validate(content);
+        assert!(matches!(
+            result,
+            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (0..18)
+        ));
     }
 
     #[test]
@@ -206,7 +251,6 @@ mod test {
 
     #[test]
     fn get_parent_titles_none_ok() {
-        let content = "Some text as preamble of the document";
         let org_section = OrgSection::<Validated>::new_test(
             OrgKind::Preamble { content: 0..37 },
             0..37,
@@ -214,14 +258,18 @@ mod test {
             vec![],
         );
         let parents = org_section.get_parent_titles().unwrap();
-        assert_eq!(parents, vec![]);
+        assert_eq!(parents, Vec::<String>::new());
     }
 
     #[test]
     fn get_parent_titles_order_ok() {
         let content = "* Headline 1\n** Headline 2\n*** Headline 3\n**** Headline 4";
         let headlines = get_headlines(content);
-        let parents = vec![headlines[0], headlines[1], headlines[2]];
+        let parents = vec![
+            headlines[0].clone(),
+            headlines[1].clone(),
+            headlines[2].clone(),
+        ];
         let section = OrgSection::<Validated>::new_test(
             OrgKind::Preamble { content: 0..37 },
             0..37,

@@ -30,7 +30,10 @@ pub enum SectionError {
     InvalidSectionRange(Range<usize>),
     #[error("Failed to retrieve title from parent headline")]
     ParentTitleError,
-    #[error("Range {0:?} is out of bounds or splits UTF-8 boundaries in content")]
-    InvalidOrgKindRange(Range<usize>),
+    #[error("Internal range {range:?} for field '{field}' is invalid")]
+    InvalidOrgKindRange {
+        range: Range<usize>,
+        field: &'static str,
+    },
 }
 

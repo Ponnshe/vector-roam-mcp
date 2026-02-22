@@ -114,12 +114,45 @@ impl OrgSection<Validated> {
         }
     }
 
-    pub fn get_text<'a>(&self, content: &'a str) -> &'a str {
-        todo!()
+    pub fn get_text(&self, content: &str) -> String {
+        match &self.kind {
+            OrgKind::Preamble {
+                content: content_range,
+            } => content[content_range.clone()].to_string(),
+            OrgKind::Headline {
+                headline_range,
+                content_ranges,
+                ..
+            } => {
+                let total_len = content[headline_range.clone()].len()
+                    + content_ranges
+                        .iter()
+                        .map(|r| content[r.clone()].len())
+                        .sum::<usize>();
+
+                let mut result = String::with_capacity(total_len);
+
+                result.push_str(&content[headline_range.clone()]);
+                for range in content_ranges {
+                    result.push_str(&content[range.clone()]);
+                }
+                result
+            }
+            OrgKind::SrcBlock {
+                language,
+                content_range,
+            } => {
+                format!("```{}\n{}\n```", language, &content[content_range.clone()])
+            }
+        }
     }
 
     pub fn get_parent_titles(&self) -> Result<Vec<String>, SectionError> {
-        todo!()
+        Ok(self
+            .parent_headlines
+            .iter()
+            .map(|h| h.title_raw().to_string())
+            .collect())
     }
 }
 
@@ -169,7 +202,10 @@ mod test {
         let result = section.validate(content);
         assert!(matches!(
             result,
-            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (0..85)
+            Err((
+                _,
+                SectionError::InvalidSectionRange(Range { start: 0, end: 85 })
+            ))
         ));
     }
 

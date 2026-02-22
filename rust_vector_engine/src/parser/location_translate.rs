@@ -27,18 +27,21 @@ impl LocationTranslator {
         let mut positions = vec![0];
         let total_bytes = content.len();
 
-        for (i, byte) in content.as_bytes().iter().enumerate(){
+        for (i, byte) in content.as_bytes().iter().enumerate() {
             if *byte == b'\n' {
-                positions.push(i+1);
+                positions.push(i + 1);
             }
         }
 
-        Self { positions, total_bytes }
+        Self {
+            positions,
+            total_bytes,
+        }
     }
 
     pub fn resolve_line(&self, byte_offset: usize) -> Result<usize, LineError> {
         if byte_offset >= self.total_bytes {
-            return Err(LineError::OffsetOutOfBound(byte_offset))
+            return Err(LineError::OffsetOutOfBound(byte_offset));
         }
 
         match self.positions.binary_search(&byte_offset) {
@@ -48,12 +51,12 @@ impl LocationTranslator {
     }
 
     pub fn resolve_range<R>(&self, range: R) -> Result<(usize, usize), LineError>
-        where 
-            R: RangeBounds<usize>
+    where
+        R: RangeBounds<usize>,
     {
         let start = match range.start_bound() {
             std::ops::Bound::Included(s) => *s,
-            std::ops::Bound::Excluded(s) => s+1,
+            std::ops::Bound::Excluded(s) => s + 1,
             std::ops::Bound::Unbounded => 0,
         };
 
@@ -74,7 +77,10 @@ impl LocationTranslator {
                 std::ops::Bound::Unbounded => self.total_bytes.saturating_sub(1),
             };
 
-            return Err(LineError::InvalidRange { start: err_start, end: err_end })
+            return Err(LineError::InvalidRange {
+                start: err_start,
+                end: err_end,
+            });
         };
 
         let line_start = self.resolve_line(start)?;
@@ -83,13 +89,12 @@ impl LocationTranslator {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn resolve_line_offset_out_of_bound_err(){
+    fn resolve_line_offset_out_of_bound_err() {
         // Max offset is 45
         let content = "Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
@@ -98,7 +103,7 @@ mod test {
     }
 
     #[test]
-    fn resolve_line_with_emojis_ok(){
+    fn resolve_line_with_emojis_ok() {
         let content = "🦀 Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
         //This is the first line
@@ -114,7 +119,7 @@ mod test {
     }
 
     #[test]
-    fn resolve_range_end_out_of_bound_err(){
+    fn resolve_range_end_out_of_bound_err() {
         let content = "Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
         let result = location_translator.resolve_range(0..=46);
@@ -122,7 +127,7 @@ mod test {
     }
 
     #[test]
-    fn resolve_range_start_out_of_bound_err(){
+    fn resolve_range_start_out_of_bound_err() {
         let content = "Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
         let result = location_translator.resolve_range(47..=50);
@@ -130,36 +135,34 @@ mod test {
     }
 
     #[test]
-    fn resolver_range_with_emoji_ok(){
+    fn resolver_range_with_emoji_ok() {
         let content = "🦀 Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
         let result = location_translator.resolve_range(0..=20).unwrap();
-        assert_eq!(result, (1,2));
+        assert_eq!(result, (1, 2));
     }
 
     #[test]
-    fn resolve_range_same_line_ok(){
+    fn resolve_range_same_line_ok() {
         let content = "🦀 Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
         let result = location_translator.resolve_range(0..=2).unwrap();
-        assert_eq!(result, (1,1));
+        assert_eq!(result, (1, 1));
     }
 
     #[test]
-    fn resolve_range_empty_valid_range_ok(){
+    fn resolve_range_empty_valid_range_ok() {
         let content = "🦀 Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
         let result = location_translator.resolve_range(4..=4).unwrap();
-        assert_eq!(result, (1,1));
+        assert_eq!(result, (1, 1));
     }
 
     #[test]
-    fn resolve_range_invert_range_err(){
+    fn resolve_range_invert_range_err() {
         let content = "🦀 Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);
         let result = location_translator.resolve_range(20..15);
-        assert_eq!(
-            result, 
-            Err(LineError::InvalidRange{start: 20, end: 15}));
+        assert_eq!(result, Err(LineError::InvalidRange { start: 20, end: 15 }));
     }
 }

@@ -15,8 +15,10 @@
 
 use std::ops::Range;
 
-pub enum  OrgKind{
-    Preamble { content: Range<usize>},
+pub enum OrgKind {
+    Preamble {
+        content: Range<usize>,
+    },
     Headline {
         level: u8,
         headline_range: Range<usize>,

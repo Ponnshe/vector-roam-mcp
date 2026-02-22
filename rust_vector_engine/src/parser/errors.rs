@@ -25,7 +25,7 @@ pub enum LineError {
 }
 
 #[derive(Error, Debug, PartialEq)]
-pub enum SectionError{
+pub enum SectionError {
     #[error("Range {0:?} is out of bounds or splits UTF-8 boundaries in content")]
     InvalidSectionRange(Range<usize>),
     #[error("Failed to retrieve title from parent headline")]

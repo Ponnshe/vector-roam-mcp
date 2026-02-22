@@ -46,8 +46,54 @@ impl OrgSection<Unvalidated> {
         }
     }
 
+    fn check(
+        &self,
+        content: &str,
+        range: &Range<usize>,
+        field: &'static str,
+    ) -> Result<(), SectionError> {
+        if content.get(range.clone()).is_none() {
+            return Err(SectionError::InvalidOrgKindRange {
+                range: range.clone(),
+                field,
+            });
+        }
+        Ok(())
+    }
+
     pub fn validate(self, content: &str) -> Result<OrgSection<Validated>, (Self, SectionError)> {
-        todo!();
+        let byte_range = self.byte_range.clone();
+        if content.get(byte_range.clone()).is_none() {
+            return Err((self, SectionError::InvalidSectionRange(byte_range)));
+        }
+        let res = match &self.kind {
+            OrgKind::Preamble { content: r } => self.check(content, r, "preamble_content"),
+            OrgKind::Headline {
+                headline_range,
+                content_ranges,
+                ..
+            } => self
+                .check(content, headline_range, "headline_range")
+                .and_then(|_| {
+                    for r in content_ranges {
+                        self.check(content, r, "headline_content_range")?;
+                    }
+                    Ok(())
+                }),
+            OrgKind::SrcBlock {
+                content_range: r, ..
+            } => self.check(content, r, "srcblock_content"),
+        };
+        if let Err(err) = res {
+            return Err((self, err));
+        }
+        Ok(OrgSection {
+            state: std::marker::PhantomData,
+            kind: self.kind,
+            byte_range: self.byte_range,
+            line_range: self.line_range,
+            parent_headlines: self.parent_headlines,
+        })
     }
 }
 
@@ -79,12 +125,9 @@ impl OrgSection<Validated> {
 
 #[cfg(test)]
 mod test {
-    use std::{error::Error, iter::from_fn};
-
     use orgize::{
         Org,
-        export::{Container, Event},
-        rowan::ast::AstNode,
+        export::{Container, Event, from_fn},
     };
 
     use super::*;

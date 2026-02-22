@@ -62,9 +62,9 @@ impl OrgSection<Unvalidated> {
     }
 
     pub fn validate(self, content: &str) -> Result<OrgSection<Validated>, (Self, SectionError)> {
-        let byte_range = self.byte_range.clone();
-        if content.get(byte_range.clone()).is_none() {
-            return Err((self, SectionError::InvalidSectionRange(byte_range)));
+        if content.get(self.byte_range.clone()).is_none() {
+            let range = self.byte_range.clone();
+            return Err((self, SectionError::InvalidSectionRange(range)));
         }
         let res = match &self.kind {
             OrgKind::Preamble { content: r } => self.check(content, r, "preamble_content"),

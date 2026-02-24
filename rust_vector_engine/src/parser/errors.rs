@@ -35,3 +35,12 @@ pub enum SectionError {
     },
 }
 
+#[derive(Error, Debug, PartialEq)]
+pub enum ParserError {
+    #[error("The provided content is empty")]
+    EmptyContent,
+    #[error("Coordinate mapping failed: {0}")]
+    MappingError(#[from] LineError),
+    #[error("Problem with the stack of pendings")]
+    InternalStackError,
+}

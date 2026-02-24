@@ -15,12 +15,13 @@
 
 use std::ops::Range;
 
+#[derive(Debug, Clone)]
 pub enum OrgKind {
     Preamble {
         content: Range<usize>,
     },
     Headline {
-        level: u8,
+        level: usize,
         headline_range: Range<usize>,
         content_ranges: Vec<Range<usize>>,
     },

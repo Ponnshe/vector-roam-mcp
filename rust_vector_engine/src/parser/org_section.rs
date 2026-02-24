@@ -19,9 +19,12 @@ use orgize::ast::Headline;
 
 use crate::parser::{errors::SectionError, org_kind::OrgKind};
 
+#[derive(Debug)]
 pub struct Unvalidated;
+#[derive(Debug)]
 pub struct Validated;
 
+#[derive(Debug)]
 pub struct OrgSection<S = Unvalidated> {
     state: std::marker::PhantomData<S>,
     kind: OrgKind,
@@ -147,12 +150,23 @@ impl OrgSection<Validated> {
         }
     }
 
-    pub fn get_parent_titles(&self) -> Result<Vec<String>, SectionError> {
-        Ok(self
-            .parent_headlines
+    pub fn get_parent_titles(&self) -> Vec<String> {
+        self.parent_headlines
             .iter()
             .map(|h| h.title_raw().to_string())
-            .collect())
+            .collect()
+    }
+
+    pub fn kind(&self) -> OrgKind {
+        self.kind.clone()
+    }
+
+    pub fn byte_range(&self) -> Range<usize> {
+        self.byte_range.clone()
+    }
+
+    pub fn line_range(&self) -> (usize, usize) {
+        self.line_range
     }
 }
 
@@ -336,7 +350,7 @@ mod test {
             (1, 1),
             vec![],
         );
-        let parents = org_section.get_parent_titles().unwrap();
+        let parents = org_section.get_parent_titles();
         assert_eq!(parents, Vec::<String>::new());
     }
 
@@ -355,7 +369,7 @@ mod test {
             (1, 1),
             parents,
         );
-        let parents_results = section.get_parent_titles().unwrap();
+        let parents_results = section.get_parent_titles();
         assert_eq!(parents_results[0], "Headline 1");
         assert_eq!(parents_results[1], "Headline 2");
         assert_eq!(parents_results[2], "Headline 3");

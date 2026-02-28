@@ -43,4 +43,8 @@ pub enum ParserError {
     MappingError(#[from] LineError),
     #[error("Problem with the stack of pendings")]
     InternalStackError,
+    #[error("The file has no org-id")]
+    EmptyOrgId,
+    #[error("Section validation failed: {0}")]
+    ValidationError(#[from] SectionError),
 }

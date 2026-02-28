@@ -13,12 +13,12 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use std::{ops::Range, string::ParseError};
+use std::{collections::HashMap, ops::Range};
 
 use orgize::{
-    Org,
-    ast::Headline,
-    export::{Event, from_fn},
+    Org, SyntaxKind,
+    ast::{Headline, SourceBlock},
+    export::{Container, Event, from_fn},
     rowan::ast::AstNode,
 };
 
@@ -166,21 +166,147 @@ pub struct Parser {
     sections: Vec<OrgSection<Validated>>,
     org_id: String,
     file_title: String,
-    tags: Vec<String>,
-    category: Option<String>,
+    keywords: HashMap<String, Vec<String>>,
 }
 
 impl Parser {
-    fn parse_global_metadata(org: &Org) -> (String, String, Vec<String>, Option<String>) {
-        todo!()
+    fn parse_global_metadata(
+        org: &Org,
+    ) -> Result<(String, String, HashMap<String, Vec<String>>), ParserError> {
+        let document = org.document();
+        let mut keywords: HashMap<String, Vec<String>> = HashMap::new();
+        let properties = org.document().properties().ok_or(ParserError::EmptyOrgId)?;
+        let org_id = properties
+            .get("ID")
+            .ok_or(ParserError::EmptyOrgId)?
+            .to_string();
+        let title = match document.title() {
+            Some(doc_title) => doc_title,
+            None => String::new(),
+        };
+
+        for kw in document.keywords() {
+            let key = kw.key().to_uppercase();
+            let val = kw.value().trim().to_string();
+
+            match key.as_str() {
+                "ID" | "TITLE" => {}
+                _ => {
+                    keywords.entry(key).or_default().push(val);
+                }
+            }
+        }
+
+        Ok((org_id, title, keywords))
     }
 
-    fn handle_event(event: Event, context: ParserContext) {
-        todo!()
+    fn handle_event(event: Event, context: &mut ParserContext) {
+        match event {
+            Event::Enter(Container::Headline(hdl)) => {
+                if context.in_preamble {
+                    context.in_preamble = false;
+                    context.pop_and_finish_section();
+                }
+                let full_range = hdl.syntax().text_range();
+                let end_of_line = hdl
+                    .section()
+                    .map(|s| s.syntax().text_range().start())
+                    .unwrap_or_else(|| full_range.end());
+                let start = usize::from(full_range.start());
+                let end = usize::from(end_of_line);
+                let range = start..end;
+                context.add_pending_section(AuxiliarOrgKind::Headline {
+                    handle: hdl,
+                    headline_range: range,
+                });
+            }
+            Event::Leave(Container::Headline(hdl)) => {
+                context.pop_and_finish_section();
+            }
+            Event::Enter(Container::SourceBlock(src_block)) => {
+                let language = src_block
+                    .language()
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "text".to_string());
+                context.add_pending_section(AuxiliarOrgKind::SrcBlock { language });
+                if let Some(content_node) = src_block
+                    .syntax()
+                    .children()
+                    .find(|n| n.kind() == SyntaxKind::BLOCK_CONTENT)
+                {
+                    let text_range = content_node.text_range();
+                    let range = usize::from(text_range.start())..usize::from(text_range.end());
+
+                    context.add_content_range_to_last(range);
+                }
+            }
+            Event::Leave(Container::SourceBlock(_)) => {
+                context.pop_and_finish_section();
+            }
+            Event::Enter(container) => {
+                if let Some(range) = Self::get_block_range(&container) {
+                    // Lógica de apertura de Preamble
+                    if context.stack.is_empty() && context.in_preamble {
+                        context.add_pending_section(AuxiliarOrgKind::Preamble);
+                    }
+
+                    context.add_content_range_to_last(range);
+                }
+            }
+
+            _ => {}
+        }
     }
 
-    pub fn new(content: &str) -> Self {
-        todo!()
+    fn get_block_range(container: &Container) -> Option<Range<usize>> {
+        let text_range = match container {
+            Container::Paragraph(c) => Some(c.syntax().text_range()),
+            Container::List(c) => Some(c.syntax().text_range()),
+            Container::OrgTable(c) => Some(c.syntax().text_range()),
+            Container::Drawer(c) => Some(c.syntax().text_range()),
+            Container::PropertyDrawer(c) => Some(c.syntax().text_range()),
+            Container::FixedWidth(c) => Some(c.syntax().text_range()),
+            Container::QuoteBlock(c) => Some(c.syntax().text_range()),
+            Container::CenterBlock(c) => Some(c.syntax().text_range()),
+            Container::VerseBlock(c) => Some(c.syntax().text_range()),
+            Container::SpecialBlock(c) => Some(c.syntax().text_range()),
+            Container::ExampleBlock(c) => Some(c.syntax().text_range()),
+            Container::Comment(c) => Some(c.syntax().text_range()),
+            Container::DynBlock(c) => Some(c.syntax().text_range()),
+            _ => None,
+        }?;
+
+        Some(usize::from(text_range.start())..usize::from(text_range.end()))
+    }
+
+    pub fn new(content: &str) -> Result<Self, ParserError> {
+        let translator = LocationTranslator::new(content);
+        let mut context = ParserContext::new(&translator);
+        let org = Org::parse(content);
+        let (org_id, file_title, keywords) = Self::parse_global_metadata(&org)?;
+        let mut handler = from_fn(|event| {
+            Self::handle_event(event, &mut context);
+        });
+        org.traverse(&mut handler);
+
+        while !context.stack.is_empty() {
+            let _ = context.pop_and_finish_section();
+        }
+
+        let sections = context
+            .finished_sections
+            .into_iter()
+            .map(|s| {
+                s.validate(content)
+                    .map_err(|(_, err)| ParserError::ValidationError(err))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            sections,
+            org_id,
+            file_title,
+            keywords,
+        })
     }
 
     pub fn org_id(&self) -> &str {
@@ -189,14 +315,6 @@ impl Parser {
 
     pub fn file_title(&self) -> &str {
         &self.file_title
-    }
-
-    pub fn tags(&self) -> &[String] {
-        &self.tags
-    }
-
-    pub fn category(&self) -> Option<&String> {
-        self.category.as_ref()
     }
 }
 
@@ -302,7 +420,7 @@ mod test {
             assert_eq!(language, "rust");
             assert_eq!(r, content_range);
         } else {
-            panic!("Debería ser un SrcBlock");
+            panic!("Should be a SrcBlock");
         }
     }
 
@@ -343,32 +461,33 @@ mod test {
         assert_eq!(l3_parents[0].level(), 1);
         assert_eq!(l3_parents[1].level(), 2);
     }
-
     #[test]
     fn test_parse_global_metadata_full() {
-        let content = r#"#+ID: 12345
-#+TITLE: My Great Note
-#+FILETAGS: :work:rust:
-#+CATEGORY: systems
-* A headline"#;
+        let content = r#":PROPERTIES:
+    :ID: 12345
+    :END:
+    #+TITLE: My Great Note
+    #+FILETAGS: :work:rust:
+    #+CATEGORY: systems
+    * A headline"#;
         let org = Org::parse(content);
-        let (id, title, tags, cat) = Parser::parse_global_metadata(&org);
+        let (id, title, keywords) =
+            Parser::parse_global_metadata(&org).expect("Should parse valid metadata");
 
         assert_eq!(id, "12345");
         assert_eq!(title, "My Great Note");
-        assert_eq!(tags, vec!["work", "rust"]);
-        assert_eq!(cat, Some("systems".to_string()));
+
+        assert_eq!(keywords.get("FILETAGS").unwrap()[0], ":work:rust:");
+        assert_eq!(keywords.get("CATEGORY").unwrap()[0], "systems");
     }
 
     #[test]
-    fn test_parse_global_metadata_defaults() {
-        let content = "* Just a headline";
+    fn test_parse_global_metadata_missing_id_error() {
+        let content = "#+TITLE: Note without ID\n* Headline";
         let org = Org::parse(content);
-        let (id, title, tags, cat) = Parser::parse_global_metadata(&org);
+        let result = Parser::parse_global_metadata(&org);
 
-        assert!(id.is_empty());
-        assert!(title.is_empty());
-        assert!(tags.is_empty());
-        assert!(cat.is_none());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), ParserError::EmptyOrgId);
     }
 }

@@ -57,6 +57,13 @@ impl PendingOrgSection {
     }
 
     pub fn push_content_range(&mut self, range: Range<usize>) {
+        if let Some(last_range) = self.content_ranges.last() {
+            if last_range.contains(&range.start)
+                && (range.end == last_range.end || last_range.contains(&(range.end - 1)))
+            {
+                return;
+            }
+        }
         self.content_ranges.push(range);
     }
 }
@@ -162,6 +169,7 @@ impl<'a> ParserContext<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Parser {
     sections: Vec<OrgSection<Validated>>,
     org_id: String,
@@ -264,7 +272,6 @@ impl Parser {
             Container::List(c) => Some(c.syntax().text_range()),
             Container::OrgTable(c) => Some(c.syntax().text_range()),
             Container::Drawer(c) => Some(c.syntax().text_range()),
-            Container::PropertyDrawer(c) => Some(c.syntax().text_range()),
             Container::FixedWidth(c) => Some(c.syntax().text_range()),
             Container::QuoteBlock(c) => Some(c.syntax().text_range()),
             Container::CenterBlock(c) => Some(c.syntax().text_range()),
@@ -315,6 +322,25 @@ impl Parser {
 
     pub fn file_title(&self) -> &str {
         &self.file_title
+    }
+
+    pub fn keywords(&self) -> &HashMap<String, Vec<String>> {
+        &self.keywords
+    }
+
+    pub fn get_keyword(&self, key: &str) -> Option<&[String]> {
+        self.keywords.get(&key.to_uppercase()).map(|v| v.as_slice())
+    }
+
+    pub fn tags(&self) -> Vec<String> {
+        self.keywords
+            .get("FILETAGS")
+            .into_iter()
+            .flat_map(|v| v.iter())
+            .flat_map(|s| s.split(':'))
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
     }
 }
 
@@ -486,6 +512,101 @@ mod test {
         let content = "#+TITLE: Note without ID\n* Headline";
         let org = Org::parse(content);
         let result = Parser::parse_global_metadata(&org);
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), ParserError::EmptyOrgId);
+    }
+
+    #[test]
+    fn test_tags_extraction_and_cleaning() {
+        let content = r#":PROPERTIES:
+:ID: id-123
+:END:
+#+FILETAGS: :work:
+#+FILETAGS: :rust:coding:"#;
+        let parser = Parser::new(content).expect("Should initialize parser");
+        let tags = parser.tags();
+
+        assert_eq!(tags, vec!["work", "rust", "coding"]);
+    }
+
+    #[test]
+    fn test_parser_full_lifecycle_and_getters() {
+        let content = r#":PROPERTIES:
+:ID: uuid-999
+:END:
+#+TITLE: Integration Test
+#+AUTHOR: Nervo
+#+CATEGORY: testing
+
+This is a paragraph in the preamble.
+
+* Section 1
+Content of section 1."#;
+
+        let parser = Parser::new(content).expect("Should process a full file");
+
+        assert_eq!(parser.org_id(), "uuid-999");
+        assert_eq!(parser.file_title(), "Integration Test");
+        assert_eq!(parser.get_keyword("AUTHOR").unwrap()[0], "Nervo");
+        assert_eq!(parser.get_keyword("CATEGORY").unwrap()[0], "testing");
+
+        // Preamble + Headline = 2 validated sections
+        assert_eq!(parser.sections.len(), 2);
+    }
+
+    #[test]
+    fn test_block_level_capture_avoids_duplicates() {
+        let content = r#":PROPERTIES:
+:ID: doc-1
+:END:
+* Content Node
+This is a paragraph with *bold* and /italic/ and a [[link]].
+
+- Item 1
+- Item 2
+
+#+begin_src rust
+fn main() {}
+#+end_src
+"#;
+        let parser = Parser::new(content).expect("Should parse the content");
+
+        assert_eq!(
+            parser.sections.len(),
+            2,
+            "There should be 1 SrcBlock and 1 Headline"
+        );
+
+        let src_section = &parser.sections[0];
+        assert!(
+            matches!(src_section.kind(), OrgKind::SrcBlock { .. }),
+            "The first closed section should be the SrcBlock"
+        );
+
+        let hl_section = &parser.sections[1];
+
+        if let OrgKind::Headline { content_ranges, .. } = hl_section.kind() {
+            for range in &content_ranges {
+                let total_len = content[range.clone()].len();
+                let mut result = String::with_capacity(total_len);
+                result.push_str(&content[range.clone()]);
+                println!("CAPTURED: {:?}", result.trim());
+            }
+
+            assert_eq!(
+                content_ranges.len(),
+                2,
+                "Should capture exactly 1 paragraph and 1 list block, avoiding child duplication"
+            );
+        } else {
+            panic!("Section should be a Headline");
+        }
+    }
+    #[test]
+    fn test_parser_empty_content_fails() {
+        let content = "";
+        let result = Parser::new(content);
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), ParserError::EmptyOrgId);

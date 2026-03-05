@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+orgize = { git = "https://github.com/PoiScript/orgize.git" }
+rowan = "0.16.1"
+serde_json = "1.0.149"
+thiserror = "2.0.18"

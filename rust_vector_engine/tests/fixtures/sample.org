@@ -1,0 +1,1482 @@
+:PROPERTIES:
+:ID:       e4cc951c-1f37-42ab-932b-e6695cdf0671
+:END:
+#+title: OSTEP - Chapter 5
+#+HTML_HEAD: <link rel="stylesheet" href="style.css">
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+STARTUP: latexpreview
+#+STARTUP: overview
+#+options: num:nil
+#+filetags: :study:
+#+category: TOOL
+
+* Iteration 1
+** Epistemology
+/Define how to read before reading/
+
+*** Lexical
+As you skim, list unfamiliar or ambiguous terms.
+
+For each, identify:
+
+- Its definition in context.
+- Its *technical domain*.
+- Its *function*.
+- Research external references only if the term is essential to understanding system logic.
+- Annotate definitions inline or in your notes
+
+** Analisis
+/Deconstruct the system described/
+*Goal*: Build a mental architecture of the system. Each component have a part in all the questions
+** Reasoning
+/Connect it to previous knowledge/
+*Goal*: Reveal the decision logic behind the system
+** Synthesis
+*Goal*: Rebuild the idea in your own cognitive system
+
+*** Formulate new questions that extends the idea
+
+*** Make one page mental model or summary that:
+/- States the purpose/
+/- Lists its core mechanism/
+/- Names its advantages/disadvantages by dimension/
+/- Identifies what it changes/
+
+* Notes Derived
+- [[id:9bc4f610-335a-49ab-8668-5f6bc4cabbff][Making Syscalls in Rust]]
+- [[id:a9556330-57a4-4693-ad67-960c3e32738a][Syscall fork]]
+- [[id:d9c508fd-3fb8-4e67-a42d-ebbefd8cf2b7][Syscall wait]]
+* Miscellaneous
+* Homework
+** Question 1
+*** Question
+Run ./fork.py -s 10 and see which actions are taken. Can you predict what the process tree looks like at each step? Use the -c flag to check your answers. Try some different random seeds (-s) or add more actions (-a) to get the hang of it. 
+
+#+begin_src bash
+                           Process Tree:
+                               a
+
+Action: a forks b
+Process Tree?
+Action: a forks c
+Process Tree?
+Action: c EXITS
+Process Tree?
+Action: a forks d
+Process Tree?
+Action: a forks e
+Process Tree?
+#+end_src
+
+*** Answer
+Action: a forks b
+a
+└── b
+
+Action: a forks c
+                               a
+                               ├── b
+                               └── c
+
+Action: c EXITS
+                               a
+                               └── b
+
+Action: a forks d
+                               a
+                               ├── b
+                               └── d
+
+Action: a forks e
+                               a
+                               ├── b
+                               ├── d
+                               └── e
+
+** Question 2
+*** Question
+One control the simulator gives you is the fork percentage, controlled by the -f flag. The higher it is, the more likely the next action is a fork; the lower it is, the more likely the action is an exit. Run the simulator with a large number of actions (e.g., -a 100) and vary the fork percentage from 0.1 to 0.9. What do you think the resulting final process trees will look like as the percentage changes? Check your answer with -c. 
+*** Answer
+The higher the percentage, the deeper the final process tree is
+** Question 3
+*** Question
+Now, switch the output by using the -t flag (e.g., run ./fork.py -t). Given a set of process trees, can you tell which actions were taken? 
+#+begin_src bash
+                           Process Tree:
+                               a
+
+Action?
+                               a
+                               └── b
+Action?
+                               a
+                               ├── b
+                               └── c
+Action?
+                               a
+                               └── b
+Action?
+                               a
+                               ├── b
+                               └── d
+Action?
+                               a
+                               ├── b
+                               ├── d
+                               └── e
+#+end_src
+*** Answer
+Yes, I can.
+#+begin_src bash
+                           Process Tree:
+                               a
+
+Action: a forks b
+                               a
+                               └── b
+Action: a forks c
+                               a
+                               ├── b
+                               └── c
+Action: c EXITS
+                               a
+                               └── b
+Action: a forks d
+                               a
+                               ├── b
+                               └── d
+Action: a forks e
+                               a
+                               ├── b
+                               ├── d
+                               └── e
+#+end_src
+** Question 4
+*** Question
+One interesting thing to note is what happens when a child exits; what happens to its children in the process tree? To study this, let’s create a specific example: ./fork.py -A a+b,b+c,c+d,c+e,c-. This example has process ’a’ create ’b’, which in turn creates ’c’, which then creates ’d’ and ’e’. However, then, ’c’ exits. What do you think the process tree should like after the exit? What if you use the -R flag? Learn more about what happens to orphaned processes on your own to add more context. 
+*** Answer
+They stay as orphans. Depending in how accurate the simulation is, the orphans would be automatically connected to 'a' or no.
+** Question 5
+*** Question
+*** Answer
+** Question 6
+*** Question
+*** Answer
+
+** Practice 1
+Write a program that calls fork(). Before calling fork(), have the main process access a variable (e.g., x) and set its value to something (e.g., 100). What value is the variable in the child process? What happens to the variable when both the child and parent change the value of x? 
+
+*** Answer
+The value change in each one of them differently meaning the value is copied to the child and not gave as a reference.
+
+**** C code
+#+begin_src C
+// Write a program that calls fork(). Before calling fork(), have the
+// main process access a variable (e.g., x) and set its value to some-
+// thing (e.g., 100). What value is the variable in the child process?
+// What happens to the variable when both the child and parent change
+// the value of x?
+
+#include "unistd.h"
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/wait.h>
+
+int main(int argc,char *argv[]) {
+	int x = 100;
+	int rc = fork();
+
+	if (rc < 0) {
+		fprintf(stderr, "Error en fork");
+	} 
+	else if (rc == 0) {
+		printf("I am the child\n"); // This should be replaced by write to be safe
+		x += 10;
+		printf("[CHILD] My value of x is: %d\n", x); // This should be replaced by write to be safe
+	}
+	else {
+		printf("I am the parent\n");
+		x += 50;
+		printf("[PARENT] My value of x is: %d\n", x);
+		int rc_wait = wait(NULL);
+	}
+}
+#+end_src
+
+**** Rust code
+#+begin_src rust
+/// Write a program that calls fork(). Before calling fork(), have the main process access 
+/// a variable (e.g., x) and set its value to something (e.g., 100). What value is the variable 
+/// in the child process? What happens to the variable when both the child and parent 
+/// change the value of x? 
+
+use std::{io::{Cursor, Write, stdout}};
+use nix::{libc, sys::wait::waitpid, unistd::{ ForkResult, fork, write }};
+
+fn main() {
+    let mut x = 100;
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            let mut buffer = [0u8; 128];
+            let mut cursor = Cursor::new(&mut buffer[..]);
+            let _ = write!(cursor, "[CHILD] Variable x before change: {}\n", x);
+            let len = cursor.position() as usize;
+            let data = &cursor.get_ref()[..len];
+            let _ = write(stdout(), data);
+
+            x += 10;
+
+            cursor.set_position(0);
+            let _ = write!(cursor, "[CHILD] Variable x after change: {}\n", x);
+            let len = cursor.position() as usize;
+            let data = &cursor.get_ref()[..len];
+
+            let _ = write(stdout(), data);
+
+            unsafe { libc::_exit(0) }
+        },
+
+        Ok(ForkResult::Parent { child }) => {
+            let msg = format!("[PARENT] Variable x before change: {x}\n");
+            write(stdout(), msg.as_bytes());
+
+            x += 30;
+
+            let msg2 = format!("[PARENT] Variable x after change: {x}\n");
+            write(stdout(), msg2.as_bytes());
+
+            match waitpid(child, None) {
+                Ok(_) => println!("Parent: Child terminated successfully"),
+                Err(err) => eprintln!("Parent: Failed to wait for child: {err}"),
+            }
+        },
+
+        Err(err) => {
+            eprintln!("Fork Failed: {err}")
+        }
+    }
+}
+#+end_src
+
+*** Notes
+- It is better to use write() of nix to print info in the stdout because println! use a buffer and does not write the info until some parameter is met (line jump or 4KB).
+- The parent can use println and eprintln because it doesn't end with libc::_exit
+- format! is also insecure so I have to use logic with Cursor
+
+** Practice 2
+Write a program that opens a file (with the open() system call) and then calls fork() to create a new process. Can both the child and parent access the file descriptor returned by open()? What happens when they are writing to the file concurrently, i.e., at the same time? 
+
+*** Answer
+**** C Code
+#+begin_src C
+// Write a program that opens a file (with the open() system call) and then calls fork() 
+// to create a new process. Can both the child and parent access the file descriptor 
+// returned by open()? What happens when they are writing to the file concurrently, 
+// i.e., at the same time? 
+
+#include "sys/wait.h"
+#include "unistd.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
+
+const int WRITE_ERR = 1;
+
+int main (int argc, char *argv[]) {
+	int fd = open("question2-test.txt",O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+	if (fd < 0) {
+		perror("Open error");
+	}
+
+	int rc = fork();
+
+	if (rc == 0) {
+		// Child
+		char buffer[32];
+		for (int i = 0; i < 101; i++) {
+			int len = snprintf(buffer, sizeof(buffer), "Child: %d\n", i);
+			int written = write(fd, buffer, len);
+			if (written < 0) {
+				int saved_err = errno;
+				char err_msg[1024];
+
+				strerror_r(saved_err, err_msg, sizeof(err_msg));
+
+				struct iovec iov[3];
+
+				char *prefix = "Child: Write Error: ";
+				iov[0].iov_base = prefix;
+				iov[0].iov_len = strlen(prefix);
+
+				iov[1].iov_base = err_msg;
+				iov[1].iov_len = strlen(err_msg);
+
+				iov[2].iov_base = "\n";
+				iov[2].iov_len = 1;
+
+				writev(STDERR_FILENO, iov, 3);
+
+				exit(WRITE_ERR);
+			}
+		}
+		exit(0);
+	} else if (rc > 0) {
+		//Parent
+		char buffer[32];
+		for (int i = 101; i < 201; i++) {
+			int len = snprintf(buffer, sizeof(buffer), "Parent: %d\n", i) ;
+			int written = write(fd, buffer, len);
+			if (written < 0) {
+				fprintf(stderr, "Parent: Write error\n");
+				break;
+			}
+		}
+		int status;
+		int pid_ret = waitpid(rc, &status, 0);
+		if (pid_ret == -1) {
+			fprintf(stderr, "Waitpid failed");
+		}
+
+		if (WIFEXITED(status)) {
+			if (WEXITSTATUS(status) == WRITE_ERR) {
+				// For this simple code the parent just repeat the message, but in some more complex code the parent use
+				// this info to determine what actions to take (retry, abort, launch other process, etc)
+				fprintf(stderr, "Child error in writting\n");
+			}
+		} else if (WIFSIGNALED(status)) {
+			fprintf(stderr, "Killed with signal: %d\n", WTERMSIG(status)) ;
+		}
+	} else {
+		//Error
+		fprintf(stderr, "Fork error");
+	}
+}
+#+end_src
+**** Rust Code
+This code still lacks good error management, but it works
+#+begin_src rust
+///! Write a program that opens a file (with the open() system call) and then calls fork()
+///! to create a new process. Can both the child and parent access the file descriptor 
+///! returned by open()? What happens when they are writing to the file concurrently, 
+///! i.e., at the same time? 
+
+use std::{io::{Cursor, Write}};
+
+use nix::{Error, libc::_exit, sys::{stat::Mode, wait::waitpid}, unistd::{ForkResult, fork, write}};
+
+use nix::fcntl::{open, OFlag};
+
+pub fn main() -> Result<(), Error>{
+    let fd = open("./question2_rs.txt", OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC, Mode::S_IRWXU )?;
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            let mut buffer = [0u8; 1024];
+            let mut cursor = Cursor::new(&mut buffer[..]);
+            for i in 0..=100 {
+                let _ = write!(cursor, "[CHILD] {i}\n"); // TODO Implement error management
+                let len = cursor.position() as usize;
+                let data = &cursor.get_ref()[..len]; 
+                let _ = write(&fd, data); // TODO error management
+                cursor.set_position(0);
+            }
+            unsafe { _exit(0)}
+        },
+        Ok(ForkResult::Parent { child }) => {
+            for i in 101..=200 {
+                let msg = format!("[PARENT] {i}\n");
+                let _ = write(&fd, msg.as_bytes()); // TODO error management
+            }
+            waitpid(child, None)?;
+            println!("[PARENT] Child terminated successfully");
+            Ok(())
+        },
+        Err(err) => {
+            Err(err)
+        }
+    }
+}
+#+end_src
+
+Second version: better error management. The parent con propagate the error while the child can not.
+#+begin_src rust
+///! Write a program that opens a file (with the open() system call) and then calls fork()
+///! to create a new process. Can both the child and parent access the file descriptor 
+///! returned by open()? What happens when they are writing to the file concurrently, 
+///! i.e., at the same time? 
+
+use std::io::{Cursor, Write, stderr};
+
+use nix::{Error, libc::{_exit }, sys::{stat::Mode, wait::waitpid}, unistd::{ForkResult, fork, write}};
+
+use nix::fcntl::{open, OFlag};
+
+pub fn main() -> Result<(), Error>{
+    let fd = open("./question2_rs.txt", OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC, Mode::S_IRWXU )?;
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            let mut buffer = [0u8; 1024];
+            let mut cursor = Cursor::new(&mut buffer[..]);
+            for i in 0..=100 {
+                let _ = write!(cursor, "[CHILD] {i}\n");
+                let len = cursor.position() as usize;
+                let data = &cursor.get_ref()[..len]; 
+                if let Err(err) = write(&fd, data) {
+                    let mut err_buffer =  [0u8; 1024];
+                    let mut cursor_err = Cursor::new(&mut err_buffer[..]);
+                    if write!(cursor_err, "[CHILD] Fatal error writing to file: {err}\n").is_ok(){
+                        let len = cursor_err.position() as usize;
+                        let err_data = &cursor_err.get_ref()[..len];
+                        let _ = write(stderr(), err_data);
+                    }
+
+                    unsafe { _exit(1) }
+                }
+                cursor.set_position(0);
+            }
+            unsafe { _exit(0)}
+        },
+        Ok(ForkResult::Parent { child }) => {
+            for i in 101..=200 {
+                let msg = format!("[PARENT] {i}\n");
+                write(&fd, msg.as_bytes())?;
+            }
+            waitpid(child, None)?;
+            println!("[PARENT] Child terminated successfully");
+            Ok(())
+        },
+        Err(err) => {
+            Err(err)
+        }
+    }
+}
+#+end_src
+**** Theory
+Both can access the file descriptor, but the position of the writing pointer is shared meaning the ouput would be mixed. as seen in this output of ~cat question2-test.txt~
+#+begin_src bash
+...
+Parent: 152
+Child: 12
+Parent: 153
+Child: 13
+Parent: 154
+Child: 14
+Parent: 155
+Child: 15
+Parent: 156
+Child: 16
+Parent: 157
+Child: 17
+Parent: 158
+Child: 18
+Parent: 159
+Child: 19
+Parent: 160
+Child: 20
+Parent: 161
+Child: 21
+Parent: 162
+Child: 22
+Parent: 163
+Child: 23
+Parent: 164
+Child: 24
+Parent: 165
+Child: 25
+Parent: 166
+Child: 26
+Parent: 167
+Child: 27
+Parent: 168
+Child: 28
+Parent: 169
+Child: 29
+Parent: 170
+Child: 30
+Parent: 171
+...
+#+end_src
+
+*** Notes
+- To do a correct error report we have to use the ~errno~ variable
+**** Error report in the child
+#+begin_src C
+int saved_err = errno;
+char err_buffer[1024];
+char err_msg[1024];
+
+strerror_r(saved_err, err_msg, sizeof(err_msg));
+int len = snprintf(err_buffer, sizeof(err_buffer), "Child: Written Error: %s\n", err_msg);
+write(STDERR_FILENO, err_buffer, len);
+exit(WRITE_ERR);
+#+end_src
+
+- ~sterror_r~: saved the message in a buffer, better than ~sterror~
+- ~snprintf~ is still insecure but low risk an option would be ~strcat~
+
+For a version without ~snprintf~ we have to use ~writev~
+#+begin_src C
+int saved_err = errno;
+char err_msg[1024];
+
+strerror_r(saved_err, err_msg, sizeof(err_msg));
+
+struct iovec iov[3];
+
+char *prefix = "Child: Write Error: ";
+iov[0].iov_base = prefix;
+iov[0].iov_len = strlen(prefix);
+
+iov[1].iov_base = err_msg;
+iov[1].iov_len = strlen(err_msg);
+
+iov[2].iov_base = "\n";
+iov[2].iov_len = 1;
+
+writev(STDERR_FILENO, iov, 3);
+
+exit(WRITE_ERR);
+#+end_src
+
+*** Questions
+**** Which is better dprintf or fprintf for writting to a file?
+  *Man entry (snprintf)*: 
+  #+begin_quote
+       The function dprintf() is the same as fprintf() except that it outputs to a file descriptor, fd, instead of to a stdio(3) stream.
+  #+end_quote
+
+**** There are many functions and syscall with the a "v" version, what is the diff?
+  #+begin_quote
+The functions vprintf(), vfprintf(), vdprintf(), vsprintf(), vsnprintf() are equivalent to the functions printf(), fprintf(), dprintf(), sprintf(), snprintf(), respectively,  ex‐
+       cept  that  they  are  called  with a va_list instead of a variable number of arguments.  These functions do not call the va_end macro.  Because they invoke the va_arg macro, the
+       value of ap is undefined after the call.  See stdarg(3)
+  #+end_quote
+
+**** How can I know that using snprintf is secure for the child of a fork?
+
+**** Is sizeog secure for using in the child of a fork?
+
+**** How do I know what the ~snprintf~ function returns?
+  #+begin_quote
+ int snprintf(size_t size;
+                   char str[restrict size], size_t size,
+                   const char *restrict format, ...);
+  #+end_quote
+
+**** Is it okay to use ~dprintf~ or ~fprint~ in the parent?
+Yes, I should be able to use it. The risk are in the child of the fork, not in the parent
+
+**** Putting the error condition in the C code first should be more optimal (so little)
+** Practice 3
+*** Answer
+- Can I do it without ~wait()~? Yes, I can use ~waitpid()~ but it is the same and I do not think that's the exercise
+- I can try to use sleep, but it does not ensure the correct order either.
+- What other methods do I have to wait for the child to do something? I can use [[id:1fbbb897-5cbc-422a-959b-c015a08490f3][Syscall pipe]]
+*** Code C
+#+begin_src C
+// Write another program using fork(). The child process should 
+// print “hello”; the parent process should print “goodbye”. 
+// You should try to ensure that the child process always prints 
+// first; can you do this without calling wait() in the parent? 
+
+#include "sys/types.h"
+#include "sys/uio.h"
+#include <errno.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+const int BSIZE = 100;
+
+typedef enum {
+	SIGNAL_DONE = 'R',
+} ipc_signal_t;
+
+void handling_child_logic(int fildes[2]);
+void handling_parent_logic(int fildes[2]);
+void child_error_msg(char* prefix, int saved_errno);
+
+int main(int argc, char* argv[]) {
+	int fildes[2];
+	int status;
+
+	status = pipe(fildes);
+
+	if (status < 0) {
+		perror("Error with pipe:");
+		exit(EXIT_FAILURE);
+	}
+
+	pid_t pid = fork();
+
+	if (pid < 0) {
+		perror("Error with fork:");
+	} else if (pid == 0) {
+		handling_child_logic(fildes);
+	} else {
+		handling_parent_logic(fildes);
+	}
+}
+
+void handling_child_logic(int fildes[2]){
+	int written_status;
+	char* msg = "hello\n";
+
+	close(fildes[0]);
+
+	written_status = write(STDOUT_FILENO, msg, strlen(msg));
+	if (written_status < 0) {
+		close(fildes[1]);
+		child_error_msg("[CHILD] Write STDOUT Error: ", errno);
+	}
+
+	ipc_signal_t sig = SIGNAL_DONE;
+
+	written_status = write(fildes[1], &sig, sizeof(sig));
+	close(fildes[1]);
+	if (written_status < 0) {
+		child_error_msg("[CHILD] Error Pipe Writing: ", errno);
+	}
+
+	_exit(EXIT_SUCCESS);
+}
+
+void handling_parent_logic(int fildes[2]){
+	ipc_signal_t sig;
+	ssize_t nbytes;
+
+	close(fildes[1]);
+
+	nbytes = read(fildes[0], &sig, sizeof(sig));
+
+	close(fildes[0]);
+
+	if (nbytes != sizeof(sig)) {
+		perror("[PARENT] Pipe error");
+		exit(EXIT_FAILURE);
+	}
+
+
+	if (sig != SIGNAL_DONE) {
+		fprintf(stderr, "Unknown message");
+	}
+
+	printf("goodbye\n");
+}
+
+void child_error_msg(char* prefix, int saved_errno){
+		char err_msg[1024];
+
+		strerror_r(saved_errno, err_msg, sizeof(err_msg));
+
+		struct iovec iov[3];
+
+		iov[0].iov_base = prefix;
+		iov[0].iov_len = strlen(prefix);
+
+		iov[1].iov_base = err_msg;
+		iov[1].iov_len = strlen(err_msg);
+
+		iov[2].iov_base = "\n";
+		iov[2].iov_len = 1;
+
+		int _ = writev(STDERR_FILENO, iov, 3);
+
+		_exit(EXIT_FAILURE);
+}
+#+end_src
+*** Code Rust
+#+begin_src rust
+///! Write another program using fork(). The child process should 
+///print “hello”; the parent process should print 
+///“goodbye”. You should try to ensure that the child process 
+///always prints first; can you do this without calling wait() in the parent? 
+
+use std::io::{self, Cursor, Read, Result, Write, pipe, stderr, stdout};
+
+use nix::{libc::{_exit, EXIT_FAILURE, EXIT_SUCCESS}, unistd::{ForkResult, fork, write}};
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+enum IpcSignal {
+    DONE,
+}
+
+pub fn main() -> Result<()> {
+    let (mut reader, mut writer) = pipe()?;
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            drop(reader);
+
+            if let Err(written_err) = write(stdout(), b"hello\n") {
+                drop(writer);
+                let mut err_buffer = [0u8; 1024];
+                let mut cursor_err = Cursor::new(&mut err_buffer[..]);
+                if write!(cursor_err, "[CHILD] Fatal Error writing to stdout: {written_err}\n").is_ok() {
+                    let len = cursor_err.position() as usize;
+                    let err_data = &cursor_err.get_ref()[..len];
+                    let _ = write(stderr(), err_data);
+                }
+                unsafe { _exit(EXIT_FAILURE) }
+            }
+
+            let sig = IpcSignal::DONE;
+            if let Err(err) = writer.write_all(&[sig as u8]) {
+                drop(writer);
+                let mut err_buffer = [0u8; 1024];
+                let mut err_cursor = Cursor::new(&mut err_buffer[..]);
+                if write!(err_cursor, "[CHILD] Pipe Error: {err}\n").is_ok() {
+                    let len = err_cursor.position() as usize;
+                    let data = &err_cursor.get_ref()[..len];
+                    let _ = write(stderr(), data);
+                }
+
+                unsafe { _exit(EXIT_FAILURE) }
+            }
+
+            drop(writer);
+            unsafe { _exit(EXIT_SUCCESS) }
+        },
+        Ok(ForkResult::Parent { child }) => {
+            let mut sig = [0u8; size_of::<IpcSignal>()];
+            drop(writer);
+
+            reader.read_exact(&mut sig)?;
+            drop(reader);
+
+            if sig != [IpcSignal::DONE as u8] {
+                eprintln!("Unknown signal");
+                return Err(io::Error::new(io::ErrorKind::Other, "unknown signal"));
+            }
+
+            println!("goodbye");
+            Ok(())
+        },
+        Err(err) => {
+            Err(err.into())
+        }
+    }
+}
+#+end_src
+*** Notes
+*** Questions
+** Practice 4
+- *END:* <2026-02-09 lun 07:35> 
+Write a program that calls fork() and then calls some form of exec() to run the program /bin/ls. See if you can try all of the variants of exec(), including (on Linux) execl(), execle(), execlp(), execv(), execvp(), and execvpe(). Why do you think there are so many variants of the same basic call? 
+*** Answer
+**** Wrong answer
+There are so many variants to give the user the opportunity to choose the suitable for them. However, the =v= variants use stack memory, while the =l= variants use heap memory? Because one needs an array, while the other can pass directly strings.
+The =v= variants also let the user receive all the arguments in just one parameter.
+The =e= variants are helpful if we just want to use the default tool of the user system.
+**** Correct Answer
+- *v variants*: They are useful when I do not know haw many arguments I'll have till the execution time
+- *l variants*: They are useful when I know what I am gonna pass
+*** C code
+- *Resource*: [[id:83d5f126-6940-4848-a391-1cd39ec91152][Syscall exec]] 
+#+begin_src C
+// Write a program that calls fork() and then calls some form of exec() 
+// to run the program /bin/ls. See if you can try all of the variants 
+// of exec(), including (on Linux) execl(), execle(), execlp(), execv(), 
+// execvp(), and execvpe(). Why do you think there are so many variants 
+// of the same basic call? 
+
+#include "bits/types/struct_iovec.h"
+#include "sys/types.h"
+#include <unistd.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <string.h>
+
+void child_handling();
+void child_error_msg(char* prefix, int saved_errno);
+void parent_handling(pid_t child_pid);
+
+int main(int argc, char* argv[]){
+	pid_t pid = fork();
+
+	if (pid < 0) {
+		perror("Fork error:");
+	} else if (pid == 0) {
+		child_handling();
+		_exit(EXIT_SUCCESS);
+	} else {
+		parent_handling(pid);
+	}
+}
+
+
+void child_handling(){
+	// Call exec
+	/* With execvp
+	char *cmd[] = {"ls", "-l", (char*) 0};
+	execvp("ls", cmd);
+	*/
+
+	/* With execl: This gives colors. It is because I am using lsd and with execvp, I am using pure ls
+	execl("/etc/profiles/per-user/ponnshe/bin/lsd", "ls", "-l", (char *)NULL);
+	*/
+	child_error_msg("[CHILD] exec error: ", errno);
+	_exit(EXIT_FAILURE);
+}
+
+void child_error_msg(char* prefix, int saved_errno){
+	char err_msg[1024];
+
+	strerror_r(saved_errno, err_msg, sizeof(err_msg));
+
+	struct iovec iov[3];
+
+	iov[0].iov_base = prefix;
+	iov[0].iov_len = strlen(prefix);
+
+	iov[1].iov_base = err_msg;
+	iov[1].iov_len = strlen(err_msg);
+
+	iov[2].iov_base = "\n";
+	iov[2].iov_len = 1;
+}
+
+void parent_handling(pid_t child_pid){
+	int status;
+	waitpid(child_pid, &status, 0);
+
+	if (WIFEXITED(status)) {
+		if (WEXITSTATUS(status) != 0) {
+			fprintf(stderr, "[PARENT] Child terminated with error\n");
+		} else {
+			printf("[PARENT] Child terminated ok\n");
+		}
+	} else if (WIFSIGNALED(status)) {
+		fprintf(stderr, "Killed with signal: %d\n", WTERMSIG(status)) ;
+	}
+}
+#+end_src
+*** Rust code
+- [[id:6fdd0c56-7a65-41e7-ab54-4f395255f873][Rust - Command]][[id:6fdd0c56-7a65-41e7-ab54-4f395255f873][Rust - Command]]
+#+begin_src rust
+//! Write a program that calls fork() and then calls some form of exec() to run the 
+//! program /bin/ls. See if you can try all of the variants of exec(), 
+//! including (on Linux) execl(), execle(), execlp(), execv(), execvp(), 
+//! and execvpe(). Why do you think there are so many variants of the same basic call? 
+
+use std::{io::Error, process::Command};
+
+use nix::unistd::{ForkResult, fork};
+
+pub fn main() -> Result<(), Error>{
+    // As I am already changing the process I can use Command
+    let child = Command::new("ls")
+        .arg("-l")
+        .spawn()?;
+    Ok(())
+}
+#+end_src
+
+The code is so much shorter. Obviously I jnow I still have to try more methods like args, output, env, etc.
+One question is, why may I want the child handler?
+** Practice 5
+- *START:* <2026-02-09 lun 07:35> 
+- *END*: <2026-02-09 lun 08:13>
+Now write a program that uses wait() to wait for the child process to finish in the parent. What does wait() return? What happens if you use wait() in the child? 
+
+/I have already done this previously at least in C/
+
+*** Answer
+- wait return:
+  #+begin_quote
+If wait() or waitpid() returns because the status of a child process is available, these functions shall return a value equal to the process ID of the  child  process  for  which
+       status  is  reported.  If wait() or waitpid() returns due to the delivery of a signal to the calling process, -1 shall be returned and errno set to [EINTR].  If waitpid() was in‐
+       voked with WNOHANG set in options, it has at least one child process specified by pid for which status is not available, and status is not available for any process specified  by
+       pid, 0 is returned. Otherwise, -1 shall be returned, and errno set to indicate the error.
+  #+end_quote
+
+- If you use wait in the child nothing happens because the child does not have a child so the ~wait~ function return immediately
+
+*** C code
+This code is the version to test the ~wait()~ function in the child. The parent also calls ~wait()~ to test if the child get stopped.
+#+begin_src C
+// Now write a program that uses wait() to wait for the child process to finish in the parent. 
+// What does wait() return? What happens if you use wait() in the child? 
+
+#include "bits/types/struct_iovec.h"
+#include "sys/types.h"
+#include "sys/wait.h"
+#include "unistd.h"
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void child_error_msg(char* prefix, int saved_errno);
+
+int main(int argc, char* argv[]){
+	pid_t pid = fork();
+
+	if (pid < 0) {
+		perror("Fork error: ");
+	} else if (pid == 0) {
+		char* msg = "[CHILD] Hello\n";
+		int written_status = write(STDOUT_FILENO, msg, strlen(msg));
+		if (written_status != strlen(msg)) {
+			child_error_msg("[CHILD] Error writing to stdin", errno);
+		}
+		int status;
+		wait(&status);
+		_exit(EXIT_SUCCESS);
+	} else {
+		int status;
+		wait(&status);
+		if (WIFEXITED(status)) {
+			if (WEXITSTATUS(status) != 0) {
+				fprintf(stderr, "[PARENT] Child terminated with error\n");
+			}
+		} else if (WIFSIGNALED(status)) {
+			fprintf(stderr, "Killed with signal: %d\n", WTERMSIG(status)) ;
+		}
+		printf("[PARENT] Hello\n");
+	}
+}
+
+void child_error_msg(char* prefix, int saved_errno){
+	char err_msg[1024];
+
+	strerror_r(saved_errno, err_msg, sizeof(err_msg));
+
+	struct iovec iov[3];
+
+	iov[0].iov_base = prefix;
+	iov[0].iov_len = strlen(prefix);
+
+	iov[1].iov_base = err_msg;
+	iov[1].iov_len = strlen(err_msg);
+
+	iov[2].iov_base = "\n";
+	iov[2].iov_len = 1;
+}
+#+end_src
+
+*** Rust Code
+This is imperfect, but works, time limit reach
+#+begin_src rust
+use std::io::{Cursor, Write, stderr, stdout};
+
+use nix::{libc::{_exit, EXIT_FAILURE, STDOUT_FILENO}, sys::wait::{WaitStatus, wait}, unistd::{ForkResult, fork, write}};
+
+///! Now write a program that uses wait() to wait for the child process to finish in the parent. 
+///! What does wait() return? What happens if you use wait() in the child? 
+
+pub fn main() {
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            if let Err(err) = write(stdout(), b"[CHILD] Hello\n") {
+                let mut err_buff = [0u8; 1024];
+                let mut err_cursor = Cursor::new(&mut err_buff[..]);
+
+                if write!(err_cursor, "[CHILD] Fatal error writing to stdout: {err}\n").is_ok() {
+                    let len = err_cursor.position() as usize;
+                    let data = &err_cursor.get_ref()[..len];
+                    let _ = write(stderr(), data);
+                }
+                unsafe { _exit(EXIT_FAILURE) }
+            }
+        },
+        Ok(ForkResult::Parent { child }) => {
+            match wait() {
+                Ok(WaitStatus::Exited(pid, exit_status)) => {
+                    if exit_status != 0 {
+                        eprintln!("[PARENT] Child terminated with error");
+                    }
+                },
+                Ok(WaitStatus::Signaled(pid, sig, smth)) => {
+                    eprintln!("Killed with signal {sig:?}")
+                },
+                Ok(_) => {}
+                Err(_) => {}
+            }
+            println!("[PARENT] Hello");
+        },
+        Err(err) => {}
+    }
+}
+#+end_src
+** Practice 6
+- *END*: <2026-02-10 mar 14:45> 
+Write a slight modification of the previous program, this time using waitpid() instead of wait(). When would waitpid() be useful? 
+*** Answer
+There are two obvious escenarios where ~waitpid~ is better than ~wait~:
+- You want to wait for an specific proccess.
+- You just want to wait for proccesses of the same GPID
+*** C code
+#+begin_src C
+// Write a slight modification of the previous program, this time 
+// using waitpid() instead of wait(). When would waitpid() be useful? 
+
+#include "bits/types/struct_iovec.h"
+#include "sys/types.h"
+#include "sys/wait.h"
+#include "unistd.h"
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/uio.h>
+
+void child_error_msg(char* prefix, int saved_errno);
+
+int main(int argc, char* argv[]){
+	pid_t pid = fork();
+
+	if (pid < 0) {
+		perror("Fork error: ");
+	} else if (pid == 0) {
+		char* msg = "[CHILD] Hello\n";
+		int written_status = write(STDOUT_FILENO, msg, strlen(msg));
+		if (written_status != strlen(msg)) {
+			child_error_msg("[CHILD] Error writing to stdin", errno);
+		}
+		int status;
+		waitpid(-1, &status, 0);
+		_exit(EXIT_SUCCESS);
+	} else {
+		int status;
+		waitpid(pid, &status, 0);
+		if (WIFEXITED(status)) {
+			if (WEXITSTATUS(status) != 0) {
+				fprintf(stderr, "[PARENT] Child terminated with error\n");
+			}
+		} else if (WIFSIGNALED(status)) {
+			fprintf(stderr, "Killed with signal: %d\n", WTERMSIG(status)) ;
+		}
+		printf("[PARENT] Hello\n");
+	}
+}
+
+void child_error_msg(char* prefix, int saved_errno){
+	char err_msg[1024];
+
+	strerror_r(saved_errno, err_msg, sizeof(err_msg));
+
+	struct iovec iov[3];
+
+	iov[0].iov_base = prefix;
+	iov[0].iov_len = strlen(prefix);
+
+	iov[1].iov_base = err_msg;
+	iov[1].iov_len = strlen(err_msg);
+
+	iov[2].iov_base = "\n";
+	iov[2].iov_len = 1;
+
+	int _ = writev(STDERR_FILENO, iov, 3);
+}
+#+end_src
+*** Rust Code
+#+begin_src rust
+//! Write a slight modification of the previous program, this time 
+//! using waitpid() instead of wait(). When would waitpid() be useful? 
+
+use std::io::{Cursor, Write, stderr, stdout};
+
+use nix::{libc::{_exit, EXIT_FAILURE }, sys::wait::{WaitStatus, waitpid}, unistd::{ForkResult, fork, write}};
+
+
+pub fn main() {
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            if let Err(err) = write(stdout(), b"[CHILD] Hello\n") {
+                let mut err_buff = [0u8; 1024];
+                let mut err_cursor = Cursor::new(&mut err_buff[..]);
+
+                if write!(err_cursor, "[CHILD] Fatal error writing to stdout: {err}\n").is_ok() {
+                    let len = err_cursor.position() as usize;
+                    let data = &err_cursor.get_ref()[..len];
+                    let _ = write(stderr(), data);
+                }
+                unsafe { _exit(EXIT_FAILURE) }
+            }
+        },
+        Ok(ForkResult::Parent { child }) => {
+            match waitpid(child, None) {
+                Ok(WaitStatus::Exited(pid, exit_status)) => {
+                    if exit_status != 0 {
+                        eprintln!("[PARENT] Child [{pid}] terminated with error");
+                    }
+                },
+                Ok(WaitStatus::Signaled(pid, sig, _)) => {
+                    eprintln!("Child [{pid}] killed with signal {sig:?}")
+                },
+                Ok(_) => {}
+                Err(_) => {}
+            }
+            println!("[PARENT] Hello");
+        },
+        Err(err) => {
+            eprintln!("Fork failed wit error: {err}")
+        }
+    }
+}
+#+end_src
+** Practice 7
+- *START*:<2026-02-10 mar 14:52> 
+Write a program that creates a child process, and then in the child closes standard output (STDOUT FILENO). What happens if the child calls printf() to print some output after closing the descriptor? 
+*** Answer
+An error occurs if you try to print some output after closing the descriptor. In both scenarios (~printf~ and ~wirte~) an error occurs because you are trying to access a file descriptor that is already close.
+*** C code
+#+begin_src C
+// Write a program that creates a child process, and 
+// then in the child closes standard output (STDOUT FILENO). 
+// What happens if the child calls printf() to print some 
+// output after closing the descriptor? 
+
+#include "sys/types.h"
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/uio.h>
+#include <sys/wait.h>
+
+int main(int argc, char* arg[]){
+	pid_t pid = fork();
+
+	if (pid < 0) {
+		fprintf(stderr, "Fork error" );
+	} else if (pid == 0) {
+		close(STDOUT_FILENO);
+
+		// This is not a recommendable function
+		// in a production code, but this is an exercise, woudl it work with write?
+		int printf_status = printf("Hello, I am the child\n");
+
+		if (printf_status != 0) {
+			int saved_errno = errno;
+			char err_msg[1024];
+
+			strerror_r(saved_errno, err_msg, sizeof(err_msg));
+
+			struct iovec iov[3];
+
+			char* prefix = "[CHILD] printf error: ";
+
+			iov[0].iov_base = prefix;
+			iov[0].iov_len = strlen(prefix);
+
+			iov[1].iov_base = err_msg;
+			iov[1].iov_len = strlen(err_msg);
+
+			iov[2].iov_base = "\n";
+			iov[2].iov_len = 1;
+
+			int _ = writev(STDERR_FILENO, iov, 3);
+			_exit(EXIT_FAILURE);
+		} 
+
+		// Let's try it with write
+		char* msg =  "Hello, I am the child with write\n";
+		int written_status = write(STDOUT_FILENO, msg, strlen(msg));
+		if (written_status != strlen(msg)) {
+			int saved_errno = errno;
+			char err_msg[1024];
+
+			strerror_r(saved_errno, err_msg, sizeof(err_msg));
+
+			struct iovec iov[3];
+
+			char* prefix = "[CHILD] Write error: ";
+
+			iov[0].iov_base = prefix;
+			iov[0].iov_len = strlen(prefix);
+
+			iov[1].iov_base = err_msg;
+			iov[1].iov_len = strlen(err_msg);
+
+			iov[2].iov_base = "\n";
+			iov[2].iov_len = 1;
+
+			int _ = writev(STDERR_FILENO, iov, 3);
+			_exit(EXIT_FAILURE);
+		}
+
+		_exit(EXIT_SUCCESS);
+	} else {
+		int status;
+		wait(&status);
+
+		if (WIFEXITED(status)) {
+			if (WEXITSTATUS(status) ==  EXIT_FAILURE) {
+				fprintf(stderr, "[PARENT] Childe exited with errors\n");
+			}
+		} else if (WIFSIGNALED(status)) {
+			fprintf(stderr, "[PARENT] Child killed with signaled: %d\n", WTERMSIG(status));
+		}
+		printf("[PAREN] Hello\n");
+	}
+}
+#+end_src
+*** Rust code
+#+begin_src rust
+//! Write a program that creates a child process, and 
+//! then in the child closes standard output (STDOUT FILENO). 
+//! What happens if the child calls printf() to print some 
+//! output after closing the descriptor? 
+
+
+use nix::{libc::{_exit, EXIT_FAILURE, EXIT_SUCCESS, STDOUT_FILENO, printf}, sys::wait::{WaitStatus, waitpid}, unistd::{ForkResult, close, fork}};
+
+pub fn main(){
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            let _ = close(STDOUT_FILENO);
+            let status = unsafe { printf(b"[CHILD] Hello\n\0".as_ptr() as *const i8) };
+            if status != 0 {
+                eprintln!("[CHILD] Error with prinf");
+                unsafe {_exit(EXIT_FAILURE)};
+            }
+            unsafe {_exit(EXIT_SUCCESS)};
+        },
+        Ok(ForkResult::Parent { child }) => {
+            match waitpid(child, None) {
+                Ok(WaitStatus::Exited(pid, exit_status)) => {
+                    if exit_status != EXIT_SUCCESS {
+                        eprintln!("[PARENT] Child <{pid}> terminated with error");
+                    }
+                },
+                Ok(WaitStatus::Signaled(pid, sig, _)) => {
+                    eprintln!("[PARENT] Child <{pid}> killed with signal {sig:?}");
+                },
+                Ok(_) => {}
+                Err(_) => {}
+            }
+            println!("[PARENT] Hello");
+        },
+        Err(err) => {
+            eprintln!("Fork error {err}");
+        }
+    }
+}
+#+end_src
+** Practice 8
+Write a program that creates two children, and connects the standard output of one to the standard input of the other, using the pipe() system call. 
+*** C code
+#+begin_src C
+// Write a program that creates two children, and connects 
+// the standard output of one to the standard input of 
+// the other, using the pipe() system call. 
+
+#include <bits/types/struct_iovec.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+void child_handling_err_msg(char* prefix, int saved_errno);
+
+int main(int argc, char* argv[]){
+	int fds[2];
+	pid_t pid;
+
+	int pipe_status = pipe(fds);
+	if (pipe_status < 0) {
+		perror("Pipe error: ");
+	}
+
+	pid = fork();
+
+	if (pid < 0) {
+		perror("Fork error: ");
+	} else if (pid == 0) {
+		close(fds[0]);
+		// Now we "replace" STDOUT_FILENO with fds[1] the writting end of the pipe
+		int dup_status = dup2(fds[1], STDOUT_FILENO);
+		close(fds[1]);
+		if (dup_status < 0) {
+			child_handling_err_msg("Dup error: ", errno);
+		}
+		// Now we run a program
+		execlp("ls", "ls", "-l", (char *)0);
+
+		// If exec return it means error
+		_exit(EXIT_FAILURE);
+	} else {
+		int pid2 = fork();
+		if (pid2 < 0) {
+			perror("Second fork error: ");
+		} else if (pid2 == 0) {
+			close(fds[1]);
+			// "Replace" the standard input with fds[0], the reading end of the pipe
+			int dup_status = dup2(fds[0], STDIN_FILENO);
+			close(fds[0]);
+			if (dup_status < 0) {
+				child_handling_err_msg("Dup error child 2: ", errno);
+			}
+
+			execlp("grep","grep", "question.\\.c$", (char *)0);
+			_exit(EXIT_FAILURE);
+
+		}
+		int proc_status;
+		close(fds[0]);
+		close(fds[1]);
+
+		int wait_status = waitpid(-1, &proc_status, 0);
+		while (wait_status > 0) {
+			if (WIFEXITED(proc_status)) {
+				if (WEXITSTATUS(proc_status) != EXIT_SUCCESS) {
+					fprintf(stderr, "Child [%d] exited with error\n", wait_status);
+				}
+			} else if (WIFSIGNALED(proc_status)) {
+				fprintf(stderr, "Child [%d] killed with signal: %c",wait_status, WTERMSIG(proc_status));
+			}
+			wait_status = waitpid(-1, &proc_status, 0);
+		}
+
+		if (errno != ECHILD) {
+			perror("Wait error: ");
+		}
+	}
+}
+
+void child_handling_err_msg(char* prefix, int saved_errno){
+		char err_msg[1024];
+
+		strerror_r(saved_errno, err_msg, sizeof(err_msg));
+
+		struct iovec iov[3];
+		iov[0].iov_base = prefix;
+		iov[0].iov_len = strlen(prefix);
+
+		iov[1].iov_base = err_msg;
+		iov[1].iov_len = strlen(err_msg);
+
+		iov[2].iov_base = "\n";
+		iov[2].iov_len = 1;
+
+		int _ = writev(STDERR_FILENO, iov, 3);
+		_exit(EXIT_FAILURE);
+}
+#+end_src
+*** Rust Code
+#+begin_src rust
+//! Write a program that creates two children, and connects 
+//! the standard output of one to the standard input of 
+//! the other, using the pipe() system call. 
+
+use std::{ io::{Cursor, Write, stderr }, ptr::null, usize};
+
+use nix::{Result, errno::Errno, libc::{_exit, EXIT_FAILURE, EXIT_SUCCESS, execlp}, sys::wait::{WaitStatus, waitpid}, unistd::{ForkResult, dup2_stdin, dup2_stdout, fork, pipe, write}};
+
+pub fn child_handling_msg(prefix: &str, err: nix::Error){
+    let mut err_buff = [0u8; 1024];
+    let mut err_cursor = Cursor::new(&mut err_buff[..]);
+    if write!(err_cursor, "{prefix}{err}\n").is_ok() {
+        let len = err_cursor.position() as usize;
+        let data = &err_cursor.get_ref()[..len];
+        let _ = write(stderr(), data);
+    }
+    unsafe { _exit(EXIT_FAILURE) }
+}
+
+pub fn main() -> Result<()> {
+    let (reader, writer) = pipe()?;
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            drop(reader);
+
+            if let Err(err) = dup2_stdout(writer) {
+                child_handling_msg("[CHILD1] Error con dup2: ", err);
+            }
+            unsafe { execlp(c"ls".as_ptr(), c"ls".as_ptr(), c"-la".as_ptr(), null::<u8>()) };
+            unsafe { _exit(EXIT_FAILURE) };
+        },
+        Ok(ForkResult::Parent { .. }) => {
+            match unsafe { fork() } {
+                Ok(ForkResult::Child) => {
+                    drop(writer);
+                    if let Err(err) = dup2_stdin(reader) {
+                        child_handling_msg("[CHILD2] Error with dup2: ", err);
+                    }
+                    unsafe { execlp(c"grep".as_ptr(), c"grep".as_ptr(), c"question.\\.c".as_ptr(), null::<u8>()) };
+                    unsafe { _exit(EXIT_FAILURE) };
+                },
+                Ok(_) => {},
+                Err(err) => {
+                    eprintln!("Second Fork failed wit error: {err}")
+                }
+            }
+            drop(reader);
+            drop(writer);
+            loop {
+                match waitpid(None, None) {
+                    Ok(status) => {
+                        match status {
+                            WaitStatus::Exited(proc_pid, exit_status) => {
+                                if exit_status != EXIT_SUCCESS {
+                                    eprintln!("Child {proc_pid} exited with error");
+                                }
+                            },
+                            WaitStatus::Signaled(proc_pid, sig, _) => {
+                                eprintln!("Child {proc_pid} killed with signal {sig:?}");
+                            },
+                            _ => {}
+                        }
+                    },
+                    Err(Errno::ECHILD) => {
+                        break Ok(());
+                    },
+                    Err(e) => {
+                        eprintln!("Unexpected error: {e}");
+                        break Err(e);
+                    }
+                }
+            }
+        },
+        Err(err) => {
+            eprintln!("Error in first fork: {err}");
+            Err(err)
+        }
+    }
+}
+#+end_src
+
+Now I will write a simpler and rustacean version
+#+begin_src rust
+//! Write a program that creates two children, and connects 
+//! the standard output of one to the standard input of 
+//! the other, using the pipe() system call. 
+
+use std::process::{Command, Stdio};
+
+pub fn main() -> std::io::Result<()> {
+    let ls = Command::new("ls")
+        .arg("-la")
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let stdout = ls.stdout.ok_or(std::io::ErrorKind::BrokenPipe)?;
+
+    let mut grep = Command::new("grep")
+        .arg("question.\\.c")
+        .stdin(stdout)
+        .spawn()?;
+
+    let status = grep.wait()?;
+    println!("El proceso terminó con: {}", status);
+
+    Ok(())
+}
+#+end_src

@@ -17,18 +17,20 @@ use std::{collections::HashMap, ops::Range};
 
 use orgize::{
     Org, SyntaxKind,
-    ast::{Headline, SourceBlock},
+    ast::Headline,
     export::{Container, Event, from_fn},
     rowan::ast::AstNode,
 };
 
-use crate::parser::{
-    errors::{LineError, ParserError},
+use crate::parser_mod::{
+    errors::ParserError,
     location_translate::LocationTranslator,
     org_kind::OrgKind,
     org_section::{OrgSection, Unvalidated, Validated},
 };
 
+/// An internal, temporary representation of an `OrgKind` used exclusively
+/// during the AST depth-first traversal before absolute line numbers are resolved.
 enum AuxiliarOrgKind {
     Preamble,
     Headline {
@@ -40,13 +42,18 @@ enum AuxiliarOrgKind {
     },
 }
 
+/// Represents a structural node that is currently "open" during the DFS traversal.
+/// It accumulates child content ranges as the parser visits inner AST nodes.
 struct PendingOrgSection {
     auxiliar_kind: AuxiliarOrgKind,
+    /// Fragments of physical text belonging to this section.
     content_ranges: Vec<Range<usize>>,
+    /// The live CST handles to all parent headlines at the moment this section was created.
     parents_at_creation: Vec<Headline>,
 }
 
 impl PendingOrgSection {
+    /// Creates a new pending section tracking its hierarchical depth.
     pub fn new(auxiliar_kind: AuxiliarOrgKind, parents_at_creation: Vec<Headline>) -> Self {
         let content_ranges = vec![];
         Self {
@@ -56,22 +63,32 @@ impl PendingOrgSection {
         }
     }
 
+    /// Appends a new content range to this section, actively deduplicating overlaps.
+    ///
+    /// If the incoming `range` is fully contained within the previously pushed range,
+    /// it is ignored. This explicitly prevents the "matryoshka effect" where a parent
+    /// node absorbs the physical bytes of all its child elements.
     pub fn push_content_range(&mut self, range: Range<usize>) {
-        if let Some(last_range) = self.content_ranges.last() {
-            if last_range.contains(&range.start)
-                && (range.end == last_range.end || last_range.contains(&(range.end - 1)))
-            {
-                return;
-            }
+        if let Some(last_range) = self.content_ranges.last()
+            && last_range.contains(&range.start)
+            && (range.end == last_range.end || last_range.contains(&(range.end - 1)))
+        {
+            return;
         }
         self.content_ranges.push(range);
     }
 }
 
+/// The state machine managing the Depth-First Search (DFS) traversal of the Orgize AST.
 struct ParserContext<'a> {
     translator: &'a LocationTranslator,
+    /// Sections that have been successfully closed and mapped to physical lines,
+    /// but are not yet structurally validated.
     finished_sections: Vec<OrgSection<Unvalidated>>,
+    /// The active stack of structurally open nodes (e.g., a Headline that has not yet
+    /// seen its closing `Event::Leave`).
     stack: Vec<PendingOrgSection>,
+    /// Flag to determine if the parser is currently scanning the document preamble.
     in_preamble: bool,
 }
 
@@ -85,6 +102,8 @@ impl<'a> ParserContext<'a> {
         }
     }
 
+    /// Pushes a new structural block onto the traversal stack, inheriting the parent
+    /// path from the current top of the stack.
     pub fn add_pending_section(&mut self, auxiliar_kind: AuxiliarOrgKind) {
         let parents_at_creation = if let Some(last) = self.stack.last() {
             let mut parents = last.parents_at_creation.clone();
@@ -97,21 +116,25 @@ impl<'a> ParserContext<'a> {
             vec![]
         };
 
-        let pending_section = PendingOrgSection {
-            auxiliar_kind,
-            content_ranges: vec![],
-            parents_at_creation,
-        };
+        let pending_section = PendingOrgSection::new(auxiliar_kind, parents_at_creation);
 
         self.stack.push(pending_section);
     }
 
+    /// Attaches an isolated text range (e.g., a paragraph) to the most recently opened
+    /// structural block on the stack.
     pub fn add_content_range_to_last(&mut self, range: Range<usize>) {
         if let Some(pending) = self.stack.last_mut() {
             pending.push_content_range(range);
         }
     }
 
+    /// Pops the active node from the stack, uses the `LocationTranslator` to resolve
+    /// its byte boundaries into physical line ranges, and pushes it into the finished queue.
+    ///
+    /// # Errors
+    /// Returns `ParserError::InternalStackError` if the stack is empty.
+    /// Propagates `LineError` if physical coordinate resolution fails.
     pub fn pop_and_finish_section(&mut self) -> Result<(), ParserError> {
         let pending = self.stack.pop().ok_or(ParserError::InternalStackError)?;
 
@@ -169,18 +192,28 @@ impl<'a> ParserContext<'a> {
     }
 }
 
+/// The core engine responsible for analyzing an Org-mode file buffer and extracting
+/// its semantic chunks, maintaining absolute physical coordinates for RAG operations.
 #[derive(Debug)]
 pub struct Parser {
+    /// The collection of structurally validated semantic chunks ready for DB embedding.
     sections: Vec<OrgSection<Validated>>,
+    /// The globally unique identifier extracted from the `:PROPERTIES:` drawer.
     org_id: String,
+    /// The human-readable title extracted from the `#+TITLE:` keyword.
     file_title: String,
+    /// A generic key-value map for all globally defined keywords in the file.
     keywords: HashMap<String, Vec<String>>,
 }
 
+type ParsedMetadata = (String, String, HashMap<String, Vec<String>>);
 impl Parser {
-    fn parse_global_metadata(
-        org: &Org,
-    ) -> Result<(String, String, HashMap<String, Vec<String>>), ParserError> {
+    /// Extracts global file metadata like `TITLE`, `ID`, and arbitrary `#+KEYWORDS`.
+    ///
+    /// # Errors
+    /// Returns `ParserError::EmptyOrgId` if the document lacks an `ID` property drawer,
+    /// which is mandatory for vector payload mapping.
+    fn parse_global_metadata(org: &Org) -> Result<ParsedMetadata, ParserError> {
         let document = org.document();
         let mut keywords: HashMap<String, Vec<String>> = HashMap::new();
         let properties = org.document().properties().ok_or(ParserError::EmptyOrgId)?;
@@ -188,11 +221,7 @@ impl Parser {
             .get("ID")
             .ok_or(ParserError::EmptyOrgId)?
             .to_string();
-        let title = match document.title() {
-            Some(doc_title) => doc_title,
-            None => String::new(),
-        };
-
+        let title = document.title().unwrap_or_default();
         for kw in document.keywords() {
             let key = kw.key().to_uppercase();
             let val = kw.value().trim().to_string();
@@ -208,13 +237,20 @@ impl Parser {
         Ok((org_id, title, keywords))
     }
 
-    fn handle_event(event: Event, context: &mut ParserContext, content: &str) {
+    /// Evaluates an atomic AST event, managing the stack depth and assigning text
+    /// boundaries accordingly.
+    fn handle_event(
+        event: Event,
+        context: &mut ParserContext,
+        content: &str,
+    ) -> Result<(), ParserError> {
         match event {
             Event::Enter(Container::Headline(hdl)) => {
                 let full_range = hdl.syntax().text_range();
                 let start = usize::from(full_range.start());
                 let end = usize::from(full_range.end());
 
+                // Breaks spatial inheritance by explicitly stopping at the first newline.
                 let end_of_line = content[start..end]
                     .find('\n')
                     .map(|pos| start + pos + 1)
@@ -227,8 +263,8 @@ impl Parser {
                     headline_range: range,
                 });
             }
-            Event::Leave(Container::Headline(hdl)) => {
-                context.pop_and_finish_section();
+            Event::Leave(Container::Headline(_)) => {
+                context.pop_and_finish_section()?;
             }
             Event::Enter(Container::SourceBlock(src_block)) => {
                 let language = src_block
@@ -248,7 +284,7 @@ impl Parser {
                 }
             }
             Event::Leave(Container::SourceBlock(_)) => {
-                context.pop_and_finish_section();
+                context.pop_and_finish_section()?;
             }
             Event::Enter(container) => {
                 if let Some(range) = Self::get_block_range(&container) {
@@ -259,76 +295,75 @@ impl Parser {
                     context.add_content_range_to_last(range);
                 }
             }
-
             _ => {}
         }
+        Ok(())
     }
 
+    /// Internal helper that maps flat `Container` elements (like paragraphs or tables)
+    /// to their physical byte offsets.
     fn get_block_range(container: &Container) -> Option<Range<usize>> {
         let text_range = match container {
-            Container::Paragraph(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::List(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::OrgTable(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::Drawer(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::FixedWidth(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::QuoteBlock(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::CenterBlock(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::VerseBlock(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::SpecialBlock(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::ExampleBlock(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::Comment(c) => {
-                Some(c.syntax().text_range())
-            }
-            Container::DynBlock(c) => {
-                Some(c.syntax().text_range())
-            }
+            Container::Paragraph(c) => Some(c.syntax().text_range()),
+            Container::List(c) => Some(c.syntax().text_range()),
+            Container::OrgTable(c) => Some(c.syntax().text_range()),
+            Container::Drawer(c) => Some(c.syntax().text_range()),
+            Container::FixedWidth(c) => Some(c.syntax().text_range()),
+            Container::QuoteBlock(c) => Some(c.syntax().text_range()),
+            Container::CenterBlock(c) => Some(c.syntax().text_range()),
+            Container::VerseBlock(c) => Some(c.syntax().text_range()),
+            Container::SpecialBlock(c) => Some(c.syntax().text_range()),
+            Container::ExampleBlock(c) => Some(c.syntax().text_range()),
+            Container::Comment(c) => Some(c.syntax().text_range()),
+            Container::DynBlock(c) => Some(c.syntax().text_range()),
             _ => None,
         }?;
 
         Some(usize::from(text_range.start())..usize::from(text_range.end()))
     }
 
+    /// Initializes a new parsing operation against a raw Org-mode file buffer.
+    ///
+    /// This method will extract global metadata, traverse the AST, apply memory safety
+    /// boundary validations to all generated chunks, and return the operational parser state.
+    ///
+    /// # Arguments
+    /// * `content` - The full, raw UTF-8 string buffer of the `.org` file.
+    ///
+    /// # Errors
+    /// Returns `ParserError` if structural parsing fails, if the file lacks a mandatory `ID`,
+    /// or if any constructed byte range fails UTF-8 boundary validation.
     pub fn new(content: &str) -> Result<Self, ParserError> {
         let translator = LocationTranslator::new(content);
         let mut context = ParserContext::new(&translator);
         let org = Org::parse(content);
         let (org_id, file_title, keywords) = Self::parse_global_metadata(&org)?;
+
+        let mut traversal_error: Option<ParserError> = None;
         let mut handler = from_fn(|event| {
-            Self::handle_event(event, &mut context, &content);
+            if traversal_error.is_some() {
+                return;
+            }
+
+            if let Err(err) = Self::handle_event(event, &mut context, content) {
+                traversal_error = Some(err);
+            }
         });
+
         org.traverse(&mut handler);
 
+        if let Some(err) = traversal_error {
+            return Err(err);
+        }
+
         while !context.stack.is_empty() {
-            let _ = context.pop_and_finish_section();
+            context.pop_and_finish_section()?;
         }
 
         let sections = context
             .finished_sections
             .into_iter()
-            .map(|s| {
-                s.validate(content)
-                    .map_err(|(_, err)| ParserError::ValidationError(err))
-            })
+            .map(|s| s.validate(content).map_err(ParserError::ValidationError))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             sections,
@@ -338,22 +373,28 @@ impl Parser {
         })
     }
 
+    /// Returns the mandatory Org-roam ID of the parsed file.
     pub fn org_id(&self) -> &str {
         &self.org_id
     }
 
+    /// Returns the global document title.
     pub fn file_title(&self) -> &str {
         &self.file_title
     }
 
+    /// Returns a reference to the global hashmap of parsed `#+KEYWORDS`.
     pub fn keywords(&self) -> &HashMap<String, Vec<String>> {
         &self.keywords
     }
 
+    /// Retrieves all declared values for a specific `#+KEYWORD`.
+    /// The search is case-insensitive.
     pub fn get_keyword(&self, key: &str) -> Option<&[String]> {
         self.keywords.get(&key.to_uppercase()).map(|v| v.as_slice())
     }
 
+    /// Returns a flat, cleaned vector of all tags defined in the `#+FILETAGS:` keyword.
     pub fn tags(&self) -> Vec<String> {
         self.keywords
             .get("FILETAGS")
@@ -365,6 +406,7 @@ impl Parser {
             .collect()
     }
 
+    /// Returns a slice over all mathematically validated, memory-safe RAG payloads.
     pub fn sections(&self) -> &[OrgSection<Validated>] {
         &self.sections
     }
@@ -382,7 +424,7 @@ mod test {
     fn test_new_context_state() {
         let content = "";
         let translator = LocationTranslator::new(content);
-        let mut ctx = ParserContext::new(&translator);
+        let ctx = ParserContext::new(&translator);
         assert!(ctx.stack.is_empty());
         assert!(ctx.finished_sections.is_empty());
         assert!(ctx.in_preamble);
@@ -415,14 +457,13 @@ mod test {
         let lt = LocationTranslator::new(content);
         let mut ctx = ParserContext::new(&lt);
 
-        let mut handler = from_fn(|event| match event {
-            Event::Enter(Container::Headline(hdl)) => {
+        let mut handler = from_fn(|event| {
+            if let Event::Enter(Container::Headline(hdl)) = event {
                 ctx.add_pending_section(AuxiliarOrgKind::Headline {
                     handle: hdl.clone(),
                     headline_range: 0..4,
                 });
             }
-            _ => {}
         });
 
         org.traverse(&mut handler);
@@ -496,14 +537,13 @@ mod test {
         let lt = LocationTranslator::new("");
         let mut ctx = ParserContext::new(&lt);
 
-        let mut handler = from_fn(|event| match event {
-            Event::Enter(Container::Headline(hdl)) => {
+        let mut handler = from_fn(|event| {
+            if let Event::Enter(Container::Headline(hdl)) = event {
                 ctx.add_pending_section(AuxiliarOrgKind::Headline {
                     handle: hdl.clone(),
                     headline_range: 0..1,
                 });
             }
-            _ => {}
         });
 
         org.traverse(&mut handler);

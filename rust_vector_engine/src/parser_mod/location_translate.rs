@@ -15,14 +15,28 @@
 
 use std::ops::RangeBounds;
 
-use crate::parser::errors::LineError;
+use crate::parser_mod::errors::LineError;
 
+/// A highly efficient coordinate mapper that translates absolute byte offsets
+/// from a Concrete Syntax Tree (CST) into human-readable line numbers.
+///
+/// It builds a line-start index in a single O(N) pass during initialization
+/// and resolves subsequent queries in O(log L) time using binary search.
 pub struct LocationTranslator {
+    /// Stores the absolute byte offset of the first character of each line.
     positions: Vec<usize>,
+    /// The total size of the source buffer in bytes, used for bounds checking.
     total_bytes: usize,
 }
 
 impl LocationTranslator {
+    /// Initializes a new `LocationTranslator` by scanning the provided text buffer.
+    ///
+    /// This performs a single O(N) traversal over the raw bytes to locate `\n` characters,
+    /// storing their subsequent indices as line starts.
+    ///
+    /// # Arguments
+    /// * `content` - The raw string slice of the file buffer.
     pub fn new(content: &str) -> Self {
         let mut positions = vec![0];
         let total_bytes = content.len();
@@ -39,6 +53,16 @@ impl LocationTranslator {
         }
     }
 
+    /// Resolves a single absolute byte offset into a 1-based line number.
+    ///
+    /// Uses binary search against the pre-computed `positions` index, ensuring O(log L) performance.
+    ///
+    /// # Arguments
+    /// * `byte_offset` - The exact byte position in the original string buffer.
+    ///
+    /// # Errors
+    /// Returns `LineError::OffsetOutOfBound` if the requested offset is strictly greater
+    /// than or equal to the total buffer size.
     pub fn resolve_line(&self, byte_offset: usize) -> Result<usize, LineError> {
         if byte_offset >= self.total_bytes {
             return Err(LineError::OffsetOutOfBound(byte_offset));
@@ -50,6 +74,17 @@ impl LocationTranslator {
         }
     }
 
+    /// Translates an arbitrary byte range into a tuple of `(start_line, end_line)`.
+    ///
+    /// It normalizes inclusive, exclusive, and unbounded ranges into exact byte offsets
+    /// before performing the binary search resolution.
+    ///
+    /// # Arguments
+    /// * `range` - Any type implementing `RangeBounds<usize>` (e.g., `a..b`, `a..=b`, `..b`).
+    ///
+    /// # Errors
+    /// * `LineError::InvalidRange`: If the normalized start index is strictly greater than the end index.
+    /// * `LineError::OffsetOutOfBound`: If any part of the evaluated range exceeds the buffer limits.
     pub fn resolve_range<R>(&self, range: R) -> Result<(usize, usize), LineError>
     where
         R: RangeBounds<usize>,
@@ -159,6 +194,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::reversed_empty_ranges)]
     fn resolve_range_invert_range_err() {
         let content = "🦀 Hi how are you\nI'm fine, thanks, you?\nAll good";
         let location_translator = LocationTranslator::new(content);

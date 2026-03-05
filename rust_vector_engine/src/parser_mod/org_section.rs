@@ -17,23 +17,41 @@ use std::ops::Range;
 
 use orgize::ast::Headline;
 
-use crate::parser::{errors::SectionError, org_kind::OrgKind};
+use crate::parser_mod::{errors::SectionError, org_kind::OrgKind};
 
+/// Marker struct representing the initial state of an `OrgSection`.
+/// In this state, the byte ranges have been captured from the CST but
+/// have not yet been checked against the actual string buffer boundaries.
 #[derive(Debug)]
 pub struct Unvalidated;
+
+/// Marker struct representing a safe state for an `OrgSection`.
+/// In this state, it is mathematically guaranteed that all internal byte ranges
+/// are valid UTF-8 boundaries within the source string buffer.
 #[derive(Debug)]
 pub struct Validated;
 
+/// The atomic unit of the parser, representing a semantic chunk of an Org-mode file.
+///
+/// It uses the Type State Pattern (`S`) to enforce memory safety at compile-time.
+/// An `OrgSection` starts as `<Unvalidated>` and must explicitly pass through the
+/// `validate()` method to become `<Validated>`, which unlocks data extraction methods.
 #[derive(Debug)]
 pub struct OrgSection<S = Unvalidated> {
     state: std::marker::PhantomData<S>,
+    /// The semantic category and internal byte ranges of this section.
     kind: OrgKind,
+    /// The absolute byte range covering the entirety of this section.
     byte_range: Range<usize>,
+    /// The physical line numbers (start, end) corresponding to the `byte_range`.
     line_range: (usize, usize),
+    /// Lightweight handles to the AST representing the hierarchical path (breadcrumbs)
+    /// of this section. Used to extract live metadata without string duplication.
     parent_headlines: Vec<Headline>,
 }
 
 impl OrgSection<Unvalidated> {
+    /// Creates a new `OrgSection` in the `Unvalidated` state.
     pub fn new(
         kind: OrgKind,
         byte_range: Range<usize>,
@@ -49,6 +67,7 @@ impl OrgSection<Unvalidated> {
         }
     }
 
+    /// Internal helper to verify if a specific range is safe to slice from the content.
     fn check(
         &self,
         content: &str,
@@ -64,12 +83,17 @@ impl OrgSection<Unvalidated> {
         Ok(())
     }
 
-    pub fn validate(self, content: &str) -> Result<OrgSection<Validated>, (Self, SectionError)> {
+    /// Consumes the `Unvalidated` section, checks all internal ranges against the provided
+    /// string buffer, and returns a `Validated` section if all ranges align with valid UTF-8 boundaries.
+    ///
+    /// # Errors
+    /// Returns a `SectionError` if any range falls out of bounds or splits a multi-byte character.
+    pub fn validate(self, content: &str) -> Result<OrgSection<Validated>, SectionError> {
         if content.get(self.byte_range.clone()).is_none() {
             let range = self.byte_range.clone();
-            return Err((self, SectionError::InvalidSectionRange(range)));
+            return Err(SectionError::InvalidSectionRange(range));
         }
-        let res = match &self.kind {
+        match &self.kind {
             OrgKind::Preamble { content: r } => self.check(content, r, "preamble_content"),
             OrgKind::Headline {
                 headline_range,
@@ -86,10 +110,7 @@ impl OrgSection<Unvalidated> {
             OrgKind::SrcBlock {
                 content_range: r, ..
             } => self.check(content, r, "srcblock_content"),
-        };
-        if let Err(err) = res {
-            return Err((self, err));
-        }
+        }?;
         Ok(OrgSection {
             state: std::marker::PhantomData,
             kind: self.kind,
@@ -117,6 +138,11 @@ impl OrgSection<Validated> {
         }
     }
 
+    /// Extracts and safely concatenates the textual content of the section.
+    ///
+    /// - For `Preamble`, returns the raw text.
+    /// - For `Headline`, concatenates the title and all isolated content fragments into a single string.
+    /// - For `SrcBlock`, wraps the inner content in Markdown backticks with its respective language identifier.
     pub fn get_text(&self, content: &str) -> String {
         match &self.kind {
             OrgKind::Preamble {
@@ -150,6 +176,8 @@ impl OrgSection<Validated> {
         }
     }
 
+    /// Iterates over the AST handles to extract the raw text titles of all parent headlines.
+    /// This forms the hierarchical "breadcrumb" path used to enrich vector payloads.
     pub fn get_parent_titles(&self) -> Vec<String> {
         self.parent_headlines
             .iter()
@@ -157,20 +185,24 @@ impl OrgSection<Validated> {
             .collect()
     }
 
+    /// Returns the semantic kind and internal ranges of the section.
     pub fn kind(&self) -> OrgKind {
         self.kind.clone()
     }
 
+    /// Returns the absolute byte range of the section within the original buffer.
     pub fn byte_range(&self) -> Range<usize> {
         self.byte_range.clone()
     }
 
+    /// Returns the start and end line numbers of the section.
     pub fn line_range(&self) -> (usize, usize) {
         self.line_range
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::single_range_in_vec_init)]
 mod test {
     use orgize::{
         Org,
@@ -216,10 +248,10 @@ mod test {
         let result = section.validate(content);
         assert!(matches!(
             result,
-            Err((
-                _,
-                SectionError::InvalidSectionRange(Range { start: 0, end: 85 })
-            ))
+            Err(SectionError::InvalidSectionRange(Range {
+                start: 0,
+                end: 85
+            }))
         ));
     }
 
@@ -239,7 +271,7 @@ mod test {
         let result = section.validate(content);
         assert!(matches!(
             result,
-            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (0..18)
+            Err(SectionError::InvalidOrgKindRange { ref range, .. }) if *range == (0..18)
         ));
     }
 
@@ -259,7 +291,7 @@ mod test {
         let result = section.validate(content);
         assert!(matches!(
             result,
-            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (20..41)
+            Err(SectionError::InvalidOrgKindRange { ref range, .. }) if *range == (20..41)
         ));
     }
 
@@ -270,7 +302,7 @@ mod test {
         let result = section.validate(content);
         assert!(matches!(
             result,
-            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (1..18)
+            Err(SectionError::InvalidOrgKindRange { ref range, .. }) if *range == (1..18)
         ));
     }
 
@@ -289,7 +321,7 @@ mod test {
         let result = section.validate(content);
         assert!(matches!(
             result,
-            Err((_, SectionError::InvalidOrgKindRange { ref range, .. })) if *range == (0..18)
+            Err(SectionError::InvalidOrgKindRange { ref range, .. }) if *range == (0..18)
         ));
     }
 

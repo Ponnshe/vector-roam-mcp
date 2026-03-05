@@ -208,21 +208,20 @@ impl Parser {
         Ok((org_id, title, keywords))
     }
 
-    fn handle_event(event: Event, context: &mut ParserContext) {
+    fn handle_event(event: Event, context: &mut ParserContext, content: &str) {
         match event {
             Event::Enter(Container::Headline(hdl)) => {
-                if context.in_preamble {
-                    context.in_preamble = false;
-                    context.pop_and_finish_section();
-                }
                 let full_range = hdl.syntax().text_range();
-                let end_of_line = hdl
-                    .section()
-                    .map(|s| s.syntax().text_range().start())
-                    .unwrap_or_else(|| full_range.end());
                 let start = usize::from(full_range.start());
-                let end = usize::from(end_of_line);
-                let range = start..end;
+                let end = usize::from(full_range.end());
+
+                let end_of_line = content[start..end]
+                    .find('\n')
+                    .map(|pos| start + pos + 1)
+                    .unwrap_or(end);
+
+                let range = start..end_of_line;
+
                 context.add_pending_section(AuxiliarOrgKind::Headline {
                     handle: hdl,
                     headline_range: range,
@@ -253,7 +252,6 @@ impl Parser {
             }
             Event::Enter(container) => {
                 if let Some(range) = Self::get_block_range(&container) {
-                    // Lógica de apertura de Preamble
                     if context.stack.is_empty() && context.in_preamble {
                         context.add_pending_section(AuxiliarOrgKind::Preamble);
                     }
@@ -268,18 +266,42 @@ impl Parser {
 
     fn get_block_range(container: &Container) -> Option<Range<usize>> {
         let text_range = match container {
-            Container::Paragraph(c) => Some(c.syntax().text_range()),
-            Container::List(c) => Some(c.syntax().text_range()),
-            Container::OrgTable(c) => Some(c.syntax().text_range()),
-            Container::Drawer(c) => Some(c.syntax().text_range()),
-            Container::FixedWidth(c) => Some(c.syntax().text_range()),
-            Container::QuoteBlock(c) => Some(c.syntax().text_range()),
-            Container::CenterBlock(c) => Some(c.syntax().text_range()),
-            Container::VerseBlock(c) => Some(c.syntax().text_range()),
-            Container::SpecialBlock(c) => Some(c.syntax().text_range()),
-            Container::ExampleBlock(c) => Some(c.syntax().text_range()),
-            Container::Comment(c) => Some(c.syntax().text_range()),
-            Container::DynBlock(c) => Some(c.syntax().text_range()),
+            Container::Paragraph(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::List(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::OrgTable(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::Drawer(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::FixedWidth(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::QuoteBlock(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::CenterBlock(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::VerseBlock(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::SpecialBlock(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::ExampleBlock(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::Comment(c) => {
+                Some(c.syntax().text_range())
+            }
+            Container::DynBlock(c) => {
+                Some(c.syntax().text_range())
+            }
             _ => None,
         }?;
 
@@ -292,7 +314,7 @@ impl Parser {
         let org = Org::parse(content);
         let (org_id, file_title, keywords) = Self::parse_global_metadata(&org)?;
         let mut handler = from_fn(|event| {
-            Self::handle_event(event, &mut context);
+            Self::handle_event(event, &mut context, &content);
         });
         org.traverse(&mut handler);
 
@@ -341,6 +363,10 @@ impl Parser {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .collect()
+    }
+
+    pub fn sections(&self) -> &[OrgSection<Validated>] {
+        &self.sections
     }
 }
 
@@ -591,7 +617,6 @@ fn main() {}
                 let total_len = content[range.clone()].len();
                 let mut result = String::with_capacity(total_len);
                 result.push_str(&content[range.clone()]);
-                println!("CAPTURED: {:?}", result.trim());
             }
 
             assert_eq!(
